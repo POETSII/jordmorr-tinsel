@@ -81,7 +81,7 @@ typedef struct {
     uint32_t stateNo;
     
 } HostMessage;
-
+/*
 // Useful Inline Functions
 
 // Get globally unique thread id of caller
@@ -119,7 +119,7 @@ INLINE uint32_t getStateNumber(uint8_t boardY, uint8_t mailboxY, uint8_t localTh
     
     return stateNo;
 }
-
+*/
 
 /***************************************************
  * <- And here
