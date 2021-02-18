@@ -4,6 +4,8 @@
 #include "model.h"
 #include <HostLink.h>
 #include <math.h>
+#include <time.h>
+#include <stdlib.h>
 #include "../../include/POLite/ProgRouters.h"
 
 //#define DEBUGRETURNS (1)
@@ -40,7 +42,7 @@ int main()
     gettimeofday(&start_init, NULL);
     
     /********************************************************
-     * HARDWARE LAYER SETUP
+     * INTIALISATION
      * *****************************************************/
     
     for (uint8_t board = 0u; board < (NOOFBOXES * (TinselBoardsPerBox - 1u)); board++) {
@@ -48,6 +50,10 @@ int main()
         for (uint8_t mailbox = 0u; mailbox < TinselMailboxesPerBoard; mailbox++) {
             
             for (uint8_t col = 0u; col < (TinselCoresPerMailbox * NOOFHWCOLSPERCORE); col++) {
+                
+                /********************************************************
+                * HARDWARE LAYER SETUP
+                * *****************************************************/
                 
                 //Global Column Number
                 uint32_t HWColumn = (board * TinselCoresPerMailbox * NOOFHWCOLSPERCORE * TinselMailboxesPerBoard) + (mailbox * TinselCoresPerMailbox * NOOFHWCOLSPERCORE) + col;
@@ -198,6 +204,33 @@ int main()
                     hostLink.store(boardPath[board][0u], boardPath[board][1u], coreID, 1u, &prevThread);
                     hostLink.store(boardPath[board][0u], boardPath[board][1u], coreID, 1u, &nextThread);
                     
+                    /********************************************************
+                    * PERTI NET NETLIST
+                    * *****************************************************/
+                    
+                    // Transmit netlist
+                    
+                    for (uint32_t element = 0u; element < NOOFELEMENTS; element++) {
+                        
+                        for (uint32_t node = 0u; node < 7u; node++) {
+                            
+                            uint32_t netlistElement = netlist[element][node];
+                            
+                            hostLink.store(boardPath[board][0u], boardPath[board][1u], coreID, 1u, &netlistElement);
+                            
+                        }
+                        
+                    }
+                    
+                    // Transmit inital place marking
+                    
+                    for (uint32_t p = 0u; p < NOOFPLACES; p++) {
+                        
+                        uint32_t marking = place[p];
+                        
+                        hostLink.store(boardPath[board][0u], boardPath[board][1u], coreID, 1u, &marking);
+                    }
+
                 
                 }
                 
@@ -206,10 +239,6 @@ int main()
         }
     
     }
-    
-    /********************************************************
-     * HARDWARE ABSTRACTION LAYER SETUP
-     * *****************************************************/
     
     /********************************************************
      * WRITE MESH AND START GRAPH
@@ -222,7 +251,7 @@ int main()
     gettimeofday(&finish_init, NULL);
     timersub(&finish_init, &start_init, &diff_init);
     double init_duration = (double) diff_init.tv_sec + (double) diff_init.tv_usec / 1000000.0;
-    
+
     printf("Init Time = %0.5f\n", init_duration);
     printf("Launching\n");
     // Load the correct code into the cores
@@ -242,7 +271,7 @@ int main()
     for (uint32_t x = 0u; x < 10u; x++) {
     hostLink.recvMsg(&msg, sizeof(msg));
     
-    printf("Message Value = %e\n", msg.val);
+    printf("Message Value = %d\n", msg.val);
     
     }
     

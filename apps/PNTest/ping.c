@@ -1,3 +1,5 @@
+#include <stdbool.h>
+
 #include "imputation.h"
 
 /*****************************************************
@@ -12,8 +14,41 @@
 * Pre-processor Definitions
 * ***************************************************/
  
+// Netlist Transition Elements
+#define PIPELINE (0u)
+#define SYNCHRONISER (1u)
+#define GENERATOR (2u)
+#define SINK (3u)
+#define PORTOUT (4u)
 
-//GLOBALS
+// Message Directions
+#define LEFT (0u)
+#define RIGHT (1u)
+
+/*****************************************************
+* Function Prototypes
+* ***************************************************/
+
+// Petri Net Elements
+bool check_pipeline(uint32_t* in0, uint32_t* in1);
+void run_pipeline(uint32_t* in0, uint32_t* in1, uint32_t* out0, uint32_t* out1);
+bool check_synchroniser(uint32_t* in0, uint32_t* in1, uint32_t* in2);
+void run_synchroniser(uint32_t* in0, uint32_t* in1, uint32_t* in2, uint32_t* out0, uint32_t* out1, uint32_t* out2);
+void run_token_generator(uint32_t* place);
+void run_token_sink(uint32_t* place);
+void run_output_port(uint32_t* srcPlace, uint32_t* destPlace, uint32_t direction);
+void run_input_port(uint32_t* place, uint32_t tokens);
+
+//Support Functions
+uint16_t randomNum(void);
+
+/*****************************************************
+* Global Variables
+* ***************************************************/
+
+// Address for adjacent petri net 'tiles'
+uint32_t prevThread;
+uint32_t nextThread;
 
 /*****************************************************
 * Main Function
@@ -21,6 +56,7 @@
 
 int main()
 {
+    
     // Get thread id
     int me = tinselId();
     uint8_t localThreadID = me % (1u << TinselLogThreadsPerMailbox);
@@ -38,85 +74,115 @@ int main()
     // Received values for hardware layout
     // -------------------------------------------->
     uint32_t HWColNo = *baseAddress;
-    uint32_t prevThread = *(baseAddress + 1u);
-    uint32_t nextThread = *(baseAddress + 2u);
+    prevThread = *(baseAddress + 1u);
+    nextThread = *(baseAddress + 2u);
     // <-------------------------------------------
     
     
     
-    // Received values for hardware abstraction
+    // Received values for petri net
     // -------------------------------------------->
-/*    
-    for (uint32_t x = 0u; x < NOOFLEGS; x++) {
-        
-        uint32_t legOffset = 4u + (x * (4u + NOOFSTATEPANELS + LINRATIO));
     
-        fwdSame[x] = *(float*)(baseAddress + legOffset);
-        fwdDiff[x] = *(float*)(baseAddress + legOffset + 1u);
-        bwdSame[x] = *(float*)(baseAddress + legOffset + 2u);
-        bwdDiff[x] = *(float*)(baseAddress + legOffset + 3u);
-        
-        for (uint32_t y = 0u; y < NOOFSTATEPANELS; y++) {
-        
-            match[y][x] = (uint16_t)*(baseAddress + legOffset + 4u + y);
-        
+    // Declare Netlist
+    
+    uint32_t netlist[NOOFELEMENTS][7u];
+    uint32_t ptrOffset = 0u;
+    
+    // Populate Netlist
+    
+    for (uint32_t element = 0u; element < NOOFELEMENTS; element++) {
+                        
+        for (uint32_t node = 0u; node < 7u; node++) {
+            
+            netlist[element][node] = *(baseAddress + 3u + ptrOffset);
+            
+            ptrOffset++;
+            
         }
         
-        totalDistance[x] = 0.0f;
-        
-        for (uint32_t y = 0u; y < LINRATIO; y++) {
-            
-            dmLocal[y][x] = *(float*)(baseAddress + legOffset + 4u + NOOFSTATEPANELS + y);
-            totalDistance[x] += dmLocal[y][x];
-            
-        }
-    
-    }
-    // <-------------------------------------------
-    
-    // Declared and intialised seperately to avoid memset error on compilation
-    
-    for (uint32_t statePanel = 0u; statePanel < NOOFSTATEPANELS; statePanel++) {
-        for (uint32_t leg = 0u; leg < NOOFLEGS; leg++) {
-            
-            alpha[statePanel][leg] = 0.0f;
-            beta[statePanel][leg] = 0.0f;
-            
-            prevAlpha[statePanel][leg] = 0.0f;
-            nextAlpha[statePanel][leg] = 0.0f;
-            prevBeta[statePanel][leg] = 0.0f;
-            nextBeta[statePanel][leg] = 0.0f;
-            
-            rdyFlags[statePanel][leg] = 0u;
-            
-        }
     }
     
-    for (uint32_t statePanel = 0u; statePanel < NOOFSTATEPANELS; statePanel++) {
-        for (uint32_t leg = 0u; leg < NOOFLEGS; leg++) {
-            for (uint32_t linVal = 0u; linVal < (LINRATIO - 1u); linVal++) {
+    // Declare Places
+    
+    uint32_t place[NOOFPLACES];
+    
+    // Populate Initial Marking
+    
+    for (uint32_t p = 0u; p < NOOFPLACES; p++) {
+        
+        place[p] = *(baseAddress + 3u + ptrOffset);
+        
+        ptrOffset++;
+   
+    }
+    
+    // List of active transitions
+    
+    uint32_t activeList[NOOFTRANS] = {0u};
+    
+    
+    // List of token generators
+    
+    uint32_t tokenGenerator[NOOFANCILLIARY] = {0u};
+    uint32_t generatorCnt = 0u;
+    
+    // If only included for proof of concept. Needs removing for a general implementation
+    if (HWColNo == 0u) {
+    
+        for (uint32_t element = NOOFTRANS; element < NOOFELEMENTS; element++) {
+            
+            if (netlist[element][0u] == GENERATOR) {
                 
-                alphaLin[statePanel][leg][linVal] = 0.0f;
-                betaLin[statePanel][leg][linVal] = 0.0f;
+                tokenGenerator[generatorCnt] = netlist[element][1u];
+                generatorCnt++;
                 
             }
+            
         }
+    
     }
     
-    for (uint32_t leg = 0u; leg < NOOFLEGS; leg++) {
+    // List of token sinks
+    
+    uint32_t tokenSink[NOOFANCILLIARY] = {0u};
+    uint32_t SinkCnt = 0u;
+    
+    // If only included for proof of concept. Needs removing for a general implementation
+    if (HWColNo == 0u) {
+    
+        for (uint32_t element = NOOFTRANS; element < NOOFELEMENTS; element++) {
+            
+            if (netlist[element][0u] == SINK) {
+                
+                tokenSink[SinkCnt] = netlist[element][1u];
+                SinkCnt++;
+                
+            }
+            
+        }
+    
+    }
+    
+    // List of output ports
+    
+    uint32_t outputPort[NOOFANCILLIARY] = {0u};
+    uint32_t outPortCnt = 0u;
+    
+    for (uint32_t element = NOOFTRANS; element < NOOFELEMENTS; element++) {
         
-        fwdRecCnt[leg] = 0u;
-        bwdRecCnt[leg] = 0u;
-    
+        if (netlist[element][0u] == PORTOUT) {
+            
+            outputPort[outPortCnt] = element;
+            outPortCnt++;
+            
+        }
+        
     }
     
-    targHaplotype = 0u;
-    waveCnt = 0u;
-    
-    toBeSentFlags = 0u;
-    toBeSentNextFlags = 0u;
-    sentFlags = 0u;
-*/    
+    // Start cycle counter for PRNG and node timing
+    tinselPerfCountReset();
+    tinselPerfCountStart();
+  
     // Startup for forward algorithm
     if (HWColNo == (NOOFHWCOLS - 1u)) {
         
@@ -125,26 +191,13 @@ int main()
         volatile ImpMessage* msgOut = tinselSendSlot();
         
         tinselWaitUntil(TINSEL_CAN_SEND);
-        msgOut->msgType = 0u;
-        msgOut->match = 0u;
-        msgOut->leg = 0u;
-        msgOut->stateNo = 0u;
-        msgOut->val = 0.0f;
+        msgOut->destPlace = 0u;
+        msgOut->tokenCnt = 1u;
 
         // Propagate to previous column
         tinselSend(prevThread, msgOut);
-        
-        
-        
-        /*
-        // If we are also the first hardware row (Core 0, Thread 0) start the performance counter
-        if (HWRowNo == 0u) {
             
-            tinselPerfCountReset();
-            tinselPerfCountStart();
-            
-        }
-        */
+        
     }
     
     /***************************************************
@@ -152,7 +205,119 @@ int main()
     ****************************************************/
     
     while (1u) {
+
+        // Receive all inputs and run any ancilliary elements that are required at the beginning of the timestep (token generator etc.)
+        
+        while ( !(tinselIdle(0)) ) {
             
+            while (tinselCanRecv()) {
+                
+                volatile ImpMessage* msgIn = tinselRecv();
+                
+                run_input_port(&place[msgIn->destPlace], msgIn->tokenCnt);
+                
+            }
+            
+        }
+        
+        if (generatorCnt > 0u) {
+        
+            for (uint32_t generator = 0u; generator < generatorCnt; generator++) {
+                
+                run_token_generator(&place[tokenGenerator[generator]]);
+                
+            }
+        
+        }
+        
+        // Check for active transitions
+        
+        uint32_t activeCnt = 0u;
+        
+        for (uint32_t element = 0u; element < NOOFTRANS; element++) {
+            
+            bool active = false;
+            
+            switch(netlist[element][0u])
+            {
+                
+                case PIPELINE:
+                
+                    active = check_pipeline(&place[netlist[element][1u]], &place[netlist[element][2u]]);
+                
+                    break;
+                
+                case SYNCHRONISER:
+                
+                    active = check_synchroniser(&place[netlist[element][1u]], &place[netlist[element][2u]], &place[netlist[element][3u]]);
+                
+                    break;
+                
+            }
+            
+            if (active) {
+                
+                activeList[activeCnt] = element;
+                
+                activeCnt++;
+                
+            }
+            
+        }
+        
+        // Randomly Chose and Trigger a Single Active Transition (If One Exists)
+        
+        if (activeCnt > 0u) {
+            
+            int r = randomNum() % activeCnt;
+            
+            switch(netlist[activeList[r]][0u])
+            {
+                
+                case PIPELINE:
+                
+                    //run_pipeline(&place[netlist[activeList[r]][1u]], &place[netlist[activeList[r]][2u]], &place[netlist[activeList[r]][3u]], &place[netlist[activeList[r]][4u]]);
+                
+                    break;
+                
+                case SYNCHRONISER:
+                
+                    //run_synchroniser(&place[netlist[activeList[r]][1u]], &place[netlist[activeList[r]][2u]], &place[netlist[activeList[r]][3u]], &place[netlist[activeList[r]][4u]], &place[netlist[activeList[r]][5u]], &place[netlist[activeList[r]][6u]]);
+                
+                    break;
+                
+            }
+            
+        }
+        
+        if (SinkCnt > 0u) {
+        
+            for (uint32_t sink = 0u; sink < SinkCnt; sink++) {
+                
+                run_token_sink(&place[tokenSink[sink]]);
+                
+            }
+        
+        }
+        
+        // perform all sends on active output ports
+        
+        if (outPortCnt > 0u) {
+        
+            for (uint32_t port = 0u; port < outPortCnt; port++) {
+                
+                // Is there a token to be sent?
+                if (place[netlist[outputPort[outPortCnt]][1u]]) {
+                    
+                    run_output_port(&place[netlist[outputPort[outPortCnt]][1u]], &place[netlist[outputPort[outPortCnt]][2u]], netlist[outputPort[outPortCnt]][3u]);
+                    
+                }
+                
+            }
+        
+        }
+         
+
         tinselWaitUntil(TINSEL_CAN_RECV);
             
         volatile ImpMessage* msgIn = tinselRecv();
@@ -165,11 +330,8 @@ int main()
             volatile ImpMessage* msgOut = tinselSendSlot();
                 
             tinselWaitUntil(TINSEL_CAN_SEND);
-            msgOut->msgType = 0u;
-            msgOut->match = 0u;
-            msgOut->leg = 0u;
-            msgOut->stateNo = 0u;
-            msgOut->val = msgIn->val + 1.0f;
+            msgOut->destPlace = 0u;
+            msgOut->tokenCnt = msgIn->tokenCnt;
             
             // Propagate to previous column
             tinselSend(prevThread, msgOut);
@@ -184,12 +346,154 @@ int main()
             msgHost->msgType = 0u;
             msgHost->observationNo = 0u;
             msgHost->stateNo = 0u;
-            msgHost->val = msgIn->val;
+            msgHost->val = msgIn->tokenCnt;
 
             tinselSend(host, msgHost);
         }
+    
             
     }
     // Should never reach here
     return 0;
+}
+
+
+/***************************************************
+* Petri Net Transition Element Library
+****************************************************/
+
+// Pipline Element
+
+bool check_pipeline(uint32_t* in0, uint32_t* in1) {
+    
+    if (*in0 && *in1) {
+        return true;
+    }
+    else {
+        return false;
+    }
+    
+}
+
+void run_pipeline(uint32_t* in0, uint32_t* in1, uint32_t* out0, uint32_t* out1) {
+    
+    *in0 -= 1u;
+    *in1 -= 1u;
+    *out0 += 1u;
+    *out1 += 1u;
+    
+    return;
+    
+}
+
+// Syncroniser Element
+
+bool check_synchroniser(uint32_t* in0, uint32_t* in1, uint32_t* in2) {
+    
+    if (*in0 && *in1 && *in2) {
+        return true;
+    }
+    else {
+        return false;
+    }
+    
+}
+
+void run_synchroniser(uint32_t* in0, uint32_t* in1, uint32_t* in2, uint32_t* out0, uint32_t* out1, uint32_t* out2) {
+    
+    *in0 -= 1u;
+    *in1 -= 1u;
+    *in2 -= 1u;
+    *out0 += 1u;
+    *out1 += 1u;
+    *out2 += 1u;
+    
+    return;
+    
+}
+
+/***************************************************
+* Petri Net Ancilliary Element Library
+****************************************************/
+
+// Token Generator
+
+void run_token_generator(uint32_t* place) {
+    
+    *place += 1u;
+    
+    return;
+    
+}
+
+// Token Sink
+
+void run_token_sink(uint32_t* place) {
+    
+    *place -= 1u;
+    
+    return;
+}
+
+// Output Port
+
+void run_output_port(uint32_t* srcPlace, uint32_t* destPlace, uint32_t direction) {
+    
+    *srcPlace -= 1u;
+    
+    // Get pointers to mailbox message slot
+    volatile ImpMessage* msgOut = tinselSendSlot();
+        
+    tinselWaitUntil(TINSEL_CAN_SEND);
+    msgOut->destPlace = *destPlace;
+    msgOut->tokenCnt = 1u;
+    
+    // Select Direction
+    
+    switch(direction)
+    {
+        
+        case LEFT:
+        
+            // Propagate to left tile
+            tinselSend(prevThread, msgOut);
+        
+            break;
+        
+        case RIGHT:
+        
+            // Propagate to left tile
+            tinselSend(nextThread, msgOut);
+            
+            break;
+        
+    }
+    
+    return;
+    
+}
+
+// Input Port
+
+void run_input_port(uint32_t* place, uint32_t tokens) {
+    
+    *place += tokens;
+    
+    return;
+    
+}
+
+/***************************************************
+* Support Functions
+****************************************************/
+
+// Simple LFSR-based Pseudo-Random Number Generator
+
+uint16_t randomNum(void) {
+    
+    uint16_t lfsr = tinselCycleCount() % 0xFFFF;
+    uint16_t bit;
+    
+    bit  = ((lfsr >> 0) ^ (lfsr >> 2) ^ (lfsr >> 3) ^ (lfsr >> 5) ) & 1;
+    return ((lfsr >> 1) | (bit << 15));
 }

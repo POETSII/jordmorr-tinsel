@@ -20,31 +20,12 @@
 #define NOOFLEGS (1)
 
 // Model Parameters
-#define NOOFTARGHAPLOTYPES (30u)
-#define NOOFSTATES (8)
-#define NOOFSTATEPANELS (NOOFSTATES / NOOFHWROWS)
-//NOTARGMARK = 768 * NOOFBOXES
-#define NOOFTARGMARK (NOOFHWCOLS * NOOFLEGS)
-// NOOFOBS = (NOOFTARGMARK * 10) - (LINRATIO - 1)
-#define NOOFOBS (61431)
-#define TEMPNOOFOBS (61431)
-#define LINRATIO (10)
-#define NE (1000000)
-#define ERRORRATE (10000)
+#define NOOFPLACES (104u)
+#define NOOFTRANS (46u)
+#define NOOFANCILLIARY (8u)
+#define NOOFELEMENTS (NOOFTRANS + NOOFANCILLIARY)
 
-
-// MsgTypes
-#define FORWARD (0u)
-#define BACKWARD (1u)
-#define FWDLIN (2u)
-#define BWDLIN (3u)
-#define COUNTS (4u)
-
-//debug
-#define DEBUGMSG (5u)
-#define DEBUGMSG2 (6u)
-
-#define NULL (0u)
+//#define NULL (0u)
 
 #define NEXTLINODEOFFSET (32u)
 #define PREVLINODEOFFSET (24u)
@@ -54,17 +35,15 @@
 typedef struct {
     
     // Spacer for multicast key
-    uint16_t blank;
-    // Message Type
-    uint16_t msgType;
-    // Float value
-    float val;
-    // If Matched
-    uint16_t match;
-    // Leg / HW Level
-    uint16_t leg;
-    // State number
-    uint32_t stateNo;
+    uint16_t blank1;
+    // Spacer for padding multicast key
+    uint16_t blank2;
+    // Destination Place
+    uint32_t destPlace;
+    // Token Count
+    uint32_t tokenCnt;
+    // Spacer for standard message
+    uint32_t blank3;
     
     
 } ImpMessage;
@@ -74,13 +53,17 @@ typedef struct {
     // Message Type
     uint32_t msgType;
     // Float value
-    float val;
+    uint32_t val;
     // Observation Number
     uint32_t observationNo;
     // State Number
     uint32_t stateNo;
     
 } HostMessage;
+
+
+
+
 /*
 // Useful Inline Functions
 
