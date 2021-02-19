@@ -61,9 +61,6 @@ typedef struct {
     
 } HostMessage;
 
-
-
-
 /*
 // Useful Inline Functions
 

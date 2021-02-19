@@ -26,6 +26,16 @@
 #define RIGHT (1u)
 
 /*****************************************************
+* Defined Built-In Functions
+* ***************************************************/
+
+void *memset(void *s, int c, int n) {
+  char *p = (char*) s;
+  for (int i = 0; i < n; i++) p[i] = c;
+  return s;
+}
+
+/*****************************************************
 * Function Prototypes
 * ***************************************************/
 
@@ -276,13 +286,13 @@ int main()
                 
                 case PIPELINE:
                 
-                    //run_pipeline(&place[netlist[activeList[r]][1u]], &place[netlist[activeList[r]][2u]], &place[netlist[activeList[r]][3u]], &place[netlist[activeList[r]][4u]]);
+                    run_pipeline(&place[netlist[activeList[r]][1u]], &place[netlist[activeList[r]][2u]], &place[netlist[activeList[r]][3u]], &place[netlist[activeList[r]][4u]]);
                 
                     break;
                 
                 case SYNCHRONISER:
                 
-                    //run_synchroniser(&place[netlist[activeList[r]][1u]], &place[netlist[activeList[r]][2u]], &place[netlist[activeList[r]][3u]], &place[netlist[activeList[r]][4u]], &place[netlist[activeList[r]][5u]], &place[netlist[activeList[r]][6u]]);
+                    run_synchroniser(&place[netlist[activeList[r]][1u]], &place[netlist[activeList[r]][2u]], &place[netlist[activeList[r]][3u]], &place[netlist[activeList[r]][4u]], &place[netlist[activeList[r]][5u]], &place[netlist[activeList[r]][6u]]);
                 
                     break;
                 
@@ -491,7 +501,7 @@ void run_input_port(uint32_t* place, uint32_t tokens) {
 
 uint16_t randomNum(void) {
     
-    uint16_t lfsr = tinselCycleCount() % 0xFFFF;
+    uint16_t lfsr = tinselCycleCount() & 0xFFFF;
     uint16_t bit;
     
     bit  = ((lfsr >> 0) ^ (lfsr >> 2) ^ (lfsr >> 3) ^ (lfsr >> 5) ) & 1;
