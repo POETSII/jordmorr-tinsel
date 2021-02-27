@@ -17,18 +17,11 @@
 #define NOOFBOXES (8)
 #define NOOFHWCOLS (6144)
 
-#define NOOFLEGS (1)
-
 // Model Parameters
-#define NOOFPLACES (104u)
-#define NOOFTRANS (46u)
-#define NOOFANCILLIARY (8u)
+#define NOOFPLACES (112u)
+#define NOOFTRANS (50u)
+#define NOOFANCILLIARY (6u)
 #define NOOFELEMENTS (NOOFTRANS + NOOFANCILLIARY)
-
-//#define NULL (0u)
-
-#define NEXTLINODEOFFSET (32u)
-#define PREVLINODEOFFSET (24u)
 
 // Message Structures
 

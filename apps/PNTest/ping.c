@@ -134,20 +134,15 @@ int main()
     uint32_t tokenGenerator[NOOFANCILLIARY] = {0u};
     uint32_t generatorCnt = 0u;
     
-    // If only included for proof of concept. Needs removing for a general implementation
-    if (HWColNo == 0u) {
-    
-        for (uint32_t element = NOOFTRANS; element < NOOFELEMENTS; element++) {
+    for (uint32_t element = NOOFTRANS; element < NOOFELEMENTS; element++) {
+        
+        if (netlist[element][0u] == GENERATOR) {
             
-            if (netlist[element][0u] == GENERATOR) {
-                
-                tokenGenerator[generatorCnt] = netlist[element][1u];
-                generatorCnt++;
-                
-            }
+            tokenGenerator[generatorCnt] = netlist[element][1u];
+            generatorCnt++;
             
         }
-    
+        
     }
     
     // List of token sinks
@@ -187,15 +182,6 @@ int main()
         
     }
     
-    // Add first tokens into pipeline
-    
-    if (HWColNo == 0u) {
-     
-        place[0] = 1u;
-        place[2] = 1u;
-        
-    }
-    
     // Start cycle counter for PRNG and node timing
     tinselPerfCountReset();
     tinselPerfCountStart();
@@ -208,7 +194,7 @@ int main()
     /***************************************************
     * MAIN NODE HANDLER LOOP
     ****************************************************/
-    
+        
     while (1u) {
         
         // Send/Receive Event Loop
@@ -229,6 +215,17 @@ int main()
                         if (tinselCanSend()) {
                             
                             run_output_port(&place[netlist[outputPort[port]][1u]], netlist[outputPort[port]][2u], netlist[outputPort[port]][3u], prevThread, nextThread);
+                            
+                            // Send to host
+                            volatile HostMessage* msgHost = tinselSendSlot();
+
+                            tinselWaitUntil(TINSEL_CAN_SEND);
+                            msgHost->msgType = netlist[outputPort[port]][1u];
+                            msgHost->observationNo = netlist[outputPort[port]][2u];
+                            msgHost->stateNo = HWRowNo;
+                            msgHost->val = HWColNo;
+
+                            tinselSend(host, msgHost);
                         
                         }
                         
@@ -274,8 +271,26 @@ int main()
                 
             }
         
-        }*/
+        }
+        */
         
+        // For the proof of concept ----> JPM
+        
+        if (HWColNo == 0u) {
+            
+            run_token_generator(&place[0]);
+            
+        }
+        if (HWColNo == (NOOFHWCOLS - 1u)) {
+            
+            run_token_generator(&place[111]);
+            
+        }
+        
+        // <---- JPM
+        
+        // ----> JPM DEBUG
+        /*
         // Send places to host
         if ((HWColNo == 0u) && (HWRowNo == 0u)) {
             
@@ -286,7 +301,7 @@ int main()
 
                 tinselWaitUntil(TINSEL_CAN_SEND);
                 msgHost->msgType = 0u;
-                msgHost->observationNo = 0u;
+                msgHost->observationNo = p;
                 msgHost->stateNo = t;
                 msgHost->val = place[p];
                 
@@ -298,6 +313,8 @@ int main()
             t++;
             
         }
+        */
+        // <---- JPM DEBUG
         
         
         // Check for active transitions
@@ -339,7 +356,15 @@ int main()
         
         if (activeCnt > 0u) {
             
-            int r = randomNum() % activeCnt;
+        int randNo = randomNum();
+        uint32_t r = 0u;
+        
+        // Calculate Modulus 
+        while (activeCnt <= randNo) {
+            r = randNo - activeCnt;
+            randNo -= activeCnt;
+        }
+
             
             switch(netlist[activeList[r]][0u])
             {
@@ -360,6 +385,7 @@ int main()
             
         }
         
+        /*
         if (sinkCnt > 0u) {
         
             for (uint32_t sink = 0u; sink < sinkCnt; sink++) {
@@ -373,42 +399,23 @@ int main()
             }
         
         }
+        */
         
-        /*
-        tinselWaitUntil(TINSEL_CAN_RECV);
+        // For the proof of concept ----> JPM
+        
+        if (HWColNo == 0u) {
             
-        volatile ImpMessage* msgIn = tinselRecv();
-        
-        if (HWColNo != 0u) {
-        
-            // Send to next thread    
-                
-            // Get pointers to mailbox message slot
-            volatile ImpMessage* msgOut = tinselSendSlot();
-                
-            tinselWaitUntil(TINSEL_CAN_SEND);
-            msgOut->destPlace = 0u;
-            msgOut->tokenCnt = msgIn->tokenCnt;
+            run_token_sink(&place[1]);
             
-            // Propagate to previous column
-            tinselSend(prevThread, msgOut);
-        
         }
-        else {
+        if (HWColNo == (NOOFHWCOLS - 1u)) {
             
-            // Send to host
-            volatile HostMessage* msgHost = tinselSendSlot();
-
-            tinselWaitUntil(TINSEL_CAN_SEND);
-            msgHost->msgType = 0u;
-            msgHost->observationNo = 0u;
-            msgHost->stateNo = 0u;
-            msgHost->val = msgIn->tokenCnt;
-
-            tinselSend(host, msgHost);
+            run_token_sink(&place[110]);
+            
         }
-    
-    */        
+        
+        // <---- JPM
+        
     }
     // Should never reach here
     return 0;

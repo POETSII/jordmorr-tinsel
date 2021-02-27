@@ -265,19 +265,45 @@ int main()
     /********************************************************
      * RECEIVE RESULTS
      * *****************************************************/
+     
+    uint32_t noOfResults = 100u;
     
     HostMessage msg;
     
-    uint32_t result[NOOFPLACES][47u] = {0u};
-
-    for (uint32_t t = 0u; t < 47u; t++) {
+    uint32_t result[NOOFPLACES][noOfResults] = {0u};
+    uint32_t active[NOOFTRANS][noOfResults] = {0u};
+    uint32_t activeCnt[noOfResults] = {0u};
+    uint32_t r[noOfResults] = {0u};
+    /*
+    for (uint32_t t = 0u; t < noOfResults; t++) {
 
         for (uint32_t p = 0u; p < NOOFPLACES; p++) {
             
             hostLink.recvMsg(&msg, sizeof(msg));
             
-            result[p][t] = msg.val;
-            printf("%d %d %d\n", t, p, msg.val);
+            if (msg.msgType == 0u) {
+                
+                result[msg.observationNo][msg.stateNo] = msg.val;
+            
+            }
+            
+            if (msg.msgType == 1u) {
+                
+                active[msg.observationNo][msg.stateNo] = msg.val;
+                
+            }
+            if (msg.msgType == 2u) {
+                
+                activeCnt[msg.stateNo] = msg.val;
+            
+            }
+            if (msg.msgType == 3u) {
+                
+                r[msg.stateNo] = msg.val;
+                
+            }
+            
+            //printf("%d %d %d\n", t, p, msg.val);
         
         }
     
@@ -286,7 +312,7 @@ int main()
     
     for (uint32_t p = 0u; p < NOOFPLACES; p++) {
     
-        for (uint32_t t = 0u; t < 47u; t++) {
+        for (uint32_t t = 0u; t < noOfResults; t++) {
 
         printf("%d", result[p][t]);
         
@@ -295,17 +321,23 @@ int main()
         printf(" // %d\n", p);
     
     }
-    /*
+    */
+    
+    uint32_t msgCnt = 0u;
+    
     //for (uint32_t t = 0u; t < 40u; t++) {
     for (;;) {
     
         hostLink.recvMsg(&msg, sizeof(msg));
+        msgCnt++;
+        
+        printf("Count = %d\n", msgCnt);
 
         printf("A message was sent col:%d  row:%d  src:%d  dest:%d\n", msg.val, msg.stateNo, msg.msgType, msg.observationNo);
         //printf("A message was received col:%d  row:%d  dest:%d\n", msg.val, msg.stateNo, msg.observationNo);
     
     }
-     */
+     
  
     // Record processing time
     gettimeofday(&finish_proc, NULL);
