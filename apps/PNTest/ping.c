@@ -46,7 +46,7 @@ bool check_synchroniser(uint32_t* in0, uint32_t* in1, uint32_t* in2);
 void run_synchroniser(uint32_t* in0, uint32_t* in1, uint32_t* in2, uint32_t* out0, uint32_t* out1, uint32_t* out2);
 void run_token_generator(uint32_t* place);
 void run_token_sink(uint32_t* place);
-void run_output_port(uint32_t* srcPlace, uint32_t* destPlace, uint32_t direction);
+void run_output_port(uint32_t *srcPlace, uint32_t destPlace, uint32_t direction, uint32_t prevThread, uint32_t nextThread);
 void run_input_port(uint32_t* place, uint32_t tokens);
 
 //Support Functions
@@ -56,9 +56,7 @@ uint16_t randomNum(void);
 * Global Variables
 * ***************************************************/
 
-// Address for adjacent petri net 'tiles'
-uint32_t prevThread;
-uint32_t nextThread;
+
 
 /*****************************************************
 * Main Function
@@ -84,8 +82,8 @@ int main()
     // Received values for hardware layout
     // -------------------------------------------->
     uint32_t HWColNo = *baseAddress;
-    prevThread = *(baseAddress + 1u);
-    nextThread = *(baseAddress + 2u);
+    uint32_t prevThread = *(baseAddress + 1u);
+    uint32_t nextThread = *(baseAddress + 2u);
     // <-------------------------------------------
     
     
@@ -155,7 +153,7 @@ int main()
     // List of token sinks
     
     uint32_t tokenSink[NOOFANCILLIARY] = {0u};
-    uint32_t SinkCnt = 0u;
+    uint32_t sinkCnt = 0u;
     
     // If only included for proof of concept. Needs removing for a general implementation
     if (HWColNo == 0u) {
@@ -164,8 +162,8 @@ int main()
             
             if (netlist[element][0u] == SINK) {
                 
-                tokenSink[SinkCnt] = netlist[element][1u];
-                SinkCnt++;
+                tokenSink[sinkCnt] = netlist[element][1u];
+                sinkCnt++;
                 
             }
             
@@ -189,47 +187,85 @@ int main()
         
     }
     
+    // Add first tokens into pipeline
+    
+    if (HWColNo == 0u) {
+     
+        place[0] = 1u;
+        place[2] = 1u;
+        
+    }
+    
     // Start cycle counter for PRNG and node timing
     tinselPerfCountReset();
     tinselPerfCountStart();
-  
-    // Startup for forward algorithm
-    if (HWColNo == (NOOFHWCOLS - 1u)) {
-        
-        
-        // Initiate message chain
-        volatile ImpMessage* msgOut = tinselSendSlot();
-        
-        tinselWaitUntil(TINSEL_CAN_SEND);
-        msgOut->destPlace = 0u;
-        msgOut->tokenCnt = 1u;
-
-        // Propagate to previous column
-        tinselSend(prevThread, msgOut);
-            
-        
-    }
+    
+    //bool tokenReceived = false;
+    uint32_t t = 0u;
+    
+    //bool msgReceived = false;
     
     /***************************************************
     * MAIN NODE HANDLER LOOP
     ****************************************************/
     
     while (1u) {
-
-        // Receive all inputs and run any ancilliary elements that are required at the beginning of the timestep (token generator etc.)
         
-        while ( !(tinselIdle(0)) ) {
+        // Send/Receive Event Loop
+        
+        while (1u) {
+        
+            // Attempt to make sends that are waiting, the network capacity permitting
             
-            while (tinselCanRecv()) {
-                
-                volatile ImpMessage* msgIn = tinselRecv();
-                
-                run_input_port(&place[msgIn->destPlace], msgIn->tokenCnt);
-                
+            if (outPortCnt > 0u) {
+            
+                for (uint32_t port = 0u; port < outPortCnt; port++) {
+                    
+                    // Is there a token to be sent?
+                    if (place[netlist[outputPort[port]][1u]]) {
+                        
+                        // Attempt to make the send
+                        
+                        if (tinselCanSend()) {
+                            
+                            run_output_port(&place[netlist[outputPort[port]][1u]], netlist[outputPort[port]][2u], netlist[outputPort[port]][3u], prevThread, nextThread);
+                        
+                        }
+                        
+                    }
+                    
+                }
+            
             }
             
+            
+            int idle = tinselIdle(0u);
+
+            if (idle) {
+                
+                    break;
+                    
+            }
+            else {
+                
+                while (tinselCanRecv()) {
+                    
+                    volatile ImpMessage* msgIn = tinselRecv();
+                    
+                    run_input_port(&place[msgIn->destPlace], msgIn->tokenCnt);
+                    
+                    //msgReceived = true;
+                    
+                    // Free message slot
+                    tinselFree(msgIn);
+                    
+                }
+            
+            }
+        
         }
         
+        /*
         if (generatorCnt > 0u) {
         
             for (uint32_t generator = 0u; generator < generatorCnt; generator++) {
@@ -238,7 +274,31 @@ int main()
                 
             }
         
+        }*/
+        
+        // Send places to host
+        if ((HWColNo == 0u) && (HWRowNo == 0u)) {
+            
+            for (uint32_t p = 0u; p < NOOFPLACES; p++) {
+            
+                // Send to host
+                volatile HostMessage* msgHost = tinselSendSlot();
+
+                tinselWaitUntil(TINSEL_CAN_SEND);
+                msgHost->msgType = 0u;
+                msgHost->observationNo = 0u;
+                msgHost->stateNo = t;
+                msgHost->val = place[p];
+                
+
+                tinselSend(host, msgHost);
+            
+            }
+            
+            t++;
+            
         }
+        
         
         // Check for active transitions
         
@@ -300,34 +360,21 @@ int main()
             
         }
         
-        if (SinkCnt > 0u) {
+        if (sinkCnt > 0u) {
         
-            for (uint32_t sink = 0u; sink < SinkCnt; sink++) {
+            for (uint32_t sink = 0u; sink < sinkCnt; sink++) {
                 
-                run_token_sink(&place[tokenSink[sink]]);
+                if (place[tokenSink[sink]] > 0u) {
                 
-            }
-        
-        }
-        
-        // perform all sends on active output ports
-        
-        if (outPortCnt > 0u) {
-        
-            for (uint32_t port = 0u; port < outPortCnt; port++) {
+                    run_token_sink(&place[tokenSink[sink]]);
                 
-                // Is there a token to be sent?
-                if (place[netlist[outputPort[outPortCnt]][1u]]) {
-                    
-                    run_output_port(&place[netlist[outputPort[outPortCnt]][1u]], &place[netlist[outputPort[outPortCnt]][2u]], netlist[outputPort[outPortCnt]][3u]);
-                    
                 }
                 
             }
         
         }
-         
-
+        
+        /*
         tinselWaitUntil(TINSEL_CAN_RECV);
             
         volatile ImpMessage* msgIn = tinselRecv();
@@ -361,7 +408,7 @@ int main()
             tinselSend(host, msgHost);
         }
     
-            
+    */        
     }
     // Should never reach here
     return 0;
@@ -430,7 +477,7 @@ void run_synchroniser(uint32_t* in0, uint32_t* in1, uint32_t* in2, uint32_t* out
 
 void run_token_generator(uint32_t* place) {
     
-    *place += 1u;
+    *place = 1u;
     
     return;
     
@@ -440,14 +487,14 @@ void run_token_generator(uint32_t* place) {
 
 void run_token_sink(uint32_t* place) {
     
-    *place -= 1u;
+    *place = 0u;
     
     return;
 }
 
 // Output Port
 
-void run_output_port(uint32_t* srcPlace, uint32_t* destPlace, uint32_t direction) {
+void run_output_port(uint32_t *srcPlace, uint32_t destPlace, uint32_t direction, uint32_t prevThread, uint32_t nextThread) {
     
     *srcPlace -= 1u;
     
@@ -455,7 +502,7 @@ void run_output_port(uint32_t* srcPlace, uint32_t* destPlace, uint32_t direction
     volatile ImpMessage* msgOut = tinselSendSlot();
         
     tinselWaitUntil(TINSEL_CAN_SEND);
-    msgOut->destPlace = *destPlace;
+    msgOut->destPlace = destPlace;
     msgOut->tokenCnt = 1u;
     
     // Select Direction
@@ -479,8 +526,20 @@ void run_output_port(uint32_t* srcPlace, uint32_t* destPlace, uint32_t direction
         
     }
     
-    return;
+    /*
+    int host = tinselHostId();
     
+    // Send to host
+    volatile HostMessage* msgHost = tinselSendSlot();
+
+    tinselWaitUntil(TINSEL_CAN_SEND);
+    msgHost->msgType = 0u;
+    msgHost->observationNo = direction;
+    msgHost->stateNo = HWRowNo;
+    msgHost->val = HWColNo;
+
+    tinselSend(host, msgHost);
+    */
 }
 
 // Input Port

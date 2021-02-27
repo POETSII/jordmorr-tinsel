@@ -267,14 +267,46 @@ int main()
      * *****************************************************/
     
     HostMessage msg;
-
-    for (uint32_t x = 0u; x < 10u; x++) {
-    hostLink.recvMsg(&msg, sizeof(msg));
     
-    printf("Message Value = %d\n", msg.val);
+    uint32_t result[NOOFPLACES][47u] = {0u};
+
+    for (uint32_t t = 0u; t < 47u; t++) {
+
+        for (uint32_t p = 0u; p < NOOFPLACES; p++) {
+            
+            hostLink.recvMsg(&msg, sizeof(msg));
+            
+            result[p][t] = msg.val;
+            printf("%d %d %d\n", t, p, msg.val);
+        
+        }
     
     }
     
+    
+    for (uint32_t p = 0u; p < NOOFPLACES; p++) {
+    
+        for (uint32_t t = 0u; t < 47u; t++) {
+
+        printf("%d", result[p][t]);
+        
+        }
+        
+        printf(" // %d\n", p);
+    
+    }
+    /*
+    //for (uint32_t t = 0u; t < 40u; t++) {
+    for (;;) {
+    
+        hostLink.recvMsg(&msg, sizeof(msg));
+
+        printf("A message was sent col:%d  row:%d  src:%d  dest:%d\n", msg.val, msg.stateNo, msg.msgType, msg.observationNo);
+        //printf("A message was received col:%d  row:%d  dest:%d\n", msg.val, msg.stateNo, msg.observationNo);
+    
+    }
+     */
+ 
     // Record processing time
     gettimeofday(&finish_proc, NULL);
     timersub(&finish_proc, &start_proc, &diff_proc);
