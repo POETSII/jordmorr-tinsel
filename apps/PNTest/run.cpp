@@ -24,7 +24,8 @@
  * 
  * ssh jordmorr@byron.cl.cam.ac.uk
  * scp -r C:\Users\drjor\Documents\tinsel\apps\PNTest jordmorr@byron.cl.cam.ac.uk:~/tinsel/apps
- * scp jordmorr@byron.cl.cam.ac.uk:~/tinsel/apps/PNTest/results.csv C:\Users\drjor\Documents\tinsel\apps\PNTest
+ * scp jordmorr@byron.cl.cam.ac.uk:~/tinsel/apps/PNTest/places.csv C:\Users\drjor\Documents\tinsel\apps\PNTest
+ * scp jordmorr@byron.cl.cam.ac.uk:~/tinsel/apps/PNTest/trans.csv C:\Users\drjor\Documents\tinsel\apps\PNTest
  * ****************************************************/
 
 int main()
@@ -265,19 +266,30 @@ int main()
     /********************************************************
      * RECEIVE RESULTS
      * *****************************************************/
-     
-    uint32_t noOfResults = 100u;
     
     HostMessage msg;
     
+    hostLink.recvMsg(&msg, sizeof(msg));
+    
+    uint32_t lowerCnt = msg.observationNo;
+    uint64_t upperCnt = msg.stateNo;
+    
+    double procTime = ((upperCnt << 32) + lowerCnt) / (TinselClockFreq * 1000000.0);
+    
+    printf("Cycle Proc Time = %.15f\n", procTime);
+    
+    // ----> FOR DEBUG ONLY
+    /*
+    uint32_t noOfResults = 10000u;
     uint32_t result[NOOFPLACES][noOfResults] = {0u};
     uint32_t active[NOOFTRANS][noOfResults] = {0u};
     uint32_t activeCnt[noOfResults] = {0u};
     uint32_t r[noOfResults] = {0u};
-    /*
+    uint32_t trans[noOfResults][2u] = {0u};
+    
     for (uint32_t t = 0u; t < noOfResults; t++) {
 
-        for (uint32_t p = 0u; p < NOOFPLACES; p++) {
+        for (uint32_t p = 0u; p < NOOFPLACES + 1u; p++) {
             
             hostLink.recvMsg(&msg, sizeof(msg));
             
@@ -286,12 +298,12 @@ int main()
                 result[msg.observationNo][msg.stateNo] = msg.val;
             
             }
-            
             if (msg.msgType == 1u) {
                 
                 active[msg.observationNo][msg.stateNo] = msg.val;
                 
             }
+            
             if (msg.msgType == 2u) {
                 
                 activeCnt[msg.stateNo] = msg.val;
@@ -302,13 +314,18 @@ int main()
                 r[msg.stateNo] = msg.val;
                 
             }
-            
+            if (msg.msgType == 4u) {
+                
+                trans[msg.observationNo][0u] = msg.val;
+                trans[msg.observationNo][1u] = msg.stateNo;
+                
+            }
             //printf("%d %d %d\n", t, p, msg.val);
         
         }
     
     }
-    
+
     
     for (uint32_t p = 0u; p < NOOFPLACES; p++) {
     
@@ -321,23 +338,121 @@ int main()
         printf(" // %d\n", p);
     
     }
-    */
     
-    uint32_t msgCnt = 0u;
+    printf("\n");
+    printf("\n");
     
-    //for (uint32_t t = 0u; t < 40u; t++) {
-    for (;;) {
+    for (uint32_t p = 0u; p < NOOFTRANS; p++) {
     
-        hostLink.recvMsg(&msg, sizeof(msg));
-        msgCnt++;
-        
-        printf("Count = %d\n", msgCnt);
+        for (uint32_t t = 0u; t < noOfResults; t++) {
 
-        printf("A message was sent col:%d  row:%d  src:%d  dest:%d\n", msg.val, msg.stateNo, msg.msgType, msg.observationNo);
-        //printf("A message was received col:%d  row:%d  dest:%d\n", msg.val, msg.stateNo, msg.observationNo);
+        printf("%d,", active[p][t]);
+        
+        }
+        
+        printf(" // %d\n", p);
     
     }
-     
+    
+    
+    //Create a file pointer
+    FILE * fp1;
+    // open the file for writing
+    fp1 = fopen ("places.csv","w");
+    
+    //Create a file pointer
+    FILE * fp2;
+    // open the file for writing
+    fp2 = fopen ("trans.csv","w");
+    
+    uint32_t msgCnt = 0u;
+    //uint32_t actCnt, trans;
+    uint8_t live = true;
+    //for (uint32_t t = 0u; t < 40u; t++) {
+    while (live) {
+        
+        hostLink.recvMsg(&msg, sizeof(msg));
+            
+        if (msg.msgType == 0u) {
+            
+            result[msg.observationNo][msg.stateNo] = msg.val;
+        
+        }
+        if (msg.msgType == 1u) {
+            
+            active[msg.observationNo][msg.stateNo] = msg.val;
+            
+        }
+        
+        if (msg.msgType == 2u) {
+            
+            activeCnt[msg.stateNo] = msg.val;
+        
+        }
+        if (msg.msgType == 3u) {
+            
+            r[msg.stateNo] = msg.val;
+            
+        }
+        if (msg.msgType == 4u) {
+            
+            //trans[msg.observationNo][0u] = msg.val;
+            //trans[msg.observationNo][1u] = msg.stateNo;
+            
+            printf("Loop No - %d\n", msg.observationNo);
+            
+            
+            if (msg.val == 0u) {
+                    
+                // Write Places
+                
+                // Header
+                
+                fprintf(fp1, " ,");
+                
+                for (uint32_t p = 0u; p < NOOFPLACES; p++) {
+                    fprintf(fp1, "%d,", p);
+                }
+                
+                fprintf(fp1, "\n");
+                
+                for (uint32_t t = 0u; t < noOfResults; t++) {
+                    
+                    fprintf(fp1, "%d,", t);
+
+                    for (uint32_t p = 0u; p < NOOFPLACES; p++) {
+                        
+                        fprintf(fp1, "%d,", result[p][t]);
+                    
+                    }
+                    
+                    fprintf(fp1, "\n");
+                
+                }
+                
+                // close the file  
+                fclose (fp1);
+                
+                // Write Transitions
+                
+                fprintf(fp2, "t, ActiveCnt, Trans\n");
+                
+                for (uint32_t t = 0u; t < noOfResults; t++) {
+                
+                    fprintf(fp2, "%d, %d, %d\n", t,  trans[t][0u], trans[t][1u]);
+                
+                }
+                
+                // close the file  
+                fclose (fp2);
+                
+                live = false;
+            }
+            
+        }
+        
+    }
+    */ 
  
     // Record processing time
     gettimeofday(&finish_proc, NULL);

@@ -23,6 +23,9 @@
 #define NOOFANCILLIARY (6u)
 #define NOOFELEMENTS (NOOFTRANS + NOOFANCILLIARY)
 
+#define NOOFREQCOLS (6144u)
+#define NOOFREQITER (10000u)
+
 // Message Structures
 
 typedef struct {

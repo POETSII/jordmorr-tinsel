@@ -71,7 +71,7 @@ const uint32_t netlist[NOOFELEMENTS][7u] {
     {3, 1},                      //2a
     {3, 110},                    //3a
     {4, 1, 111, 0},              //4a
-    {4, 100, 0, 1},              //5a
+    {4, 110, 0, 1},              //5a
 };
 
 // Intial Place Markings
