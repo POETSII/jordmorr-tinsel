@@ -15,7 +15,7 @@
 // 3 -> Token Sink
 // 4 -> Output Port
 
-const uint32_t netlist[NOOFELEMENTS][7u] {
+const uint32_t netlist[NOOFELEMENTS][7u] = {
     {1, 0, 3, 5, 1, 2, 4},                    //0
     {0, 2, 7, 3, 6},                          //1
     {0, 4, 9, 5, 8},                          //2
@@ -76,7 +76,7 @@ const uint32_t netlist[NOOFELEMENTS][7u] {
 
 // Intial Place Markings
 
-const uint32_t place[NOOFPLACES] {
+const uint32_t place[NOOFPLACES] = {
     1, //0
     0, //1
     
