@@ -191,7 +191,10 @@ int main()
     
     // ----> JPM for proof of concept only
     if (HWColNo == (NOOFREQCOLS - 1u)) {
-        place[111] = 1u;
+        
+        for (uint32_t x = 0u; x < NOOFPIPES; x++) {
+            place[111 + (x * PLACESPERPIPE)] = 1u;
+        }
     }
     // <---- JPM for proof of concept only
     /***************************************************
@@ -451,17 +454,21 @@ int main()
         
         if (HWColNo == 0u) {
             
-            if (place[1]) {
-                run_token_sink(&place[1]);
-                run_token_generator(&place[0]);
+            for (uint32_t x = 0u; x < NOOFPIPES; x++) {
+                if (place[1 + (x * PLACESPERPIPE)]) {
+                    run_token_sink(&place[1 + (x * PLACESPERPIPE)]);
+                    run_token_generator(&place[0 + (x * PLACESPERPIPE)]);
+                }
             }
             
         }
         if (HWColNo == (NOOFREQCOLS - 1u)) {
             
-            if (place[110]) {
-                run_token_sink(&place[110]);
-                run_token_generator(&place[111]);
+            for (uint32_t x = 0u; x < NOOFPIPES; x++) {
+                if (place[110 + (x * PLACESPERPIPE)]) {
+                    run_token_sink(&place[110 + (x * PLACESPERPIPE)]);
+                    run_token_generator(&place[111 + (x * PLACESPERPIPE)]);
+                }
             }
             
         }

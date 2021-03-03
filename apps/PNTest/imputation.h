@@ -18,6 +18,10 @@
 #define NOOFHWCOLS (6144)
 
 // Model Parameters
+// Fixed
+#define NOOFPIPES (1u)
+#define PLACESPERPIPE (112u)
+// Variable
 #define NOOFPLACES (112u)
 #define NOOFTRANS (50u)
 #define NOOFANCILLIARY (6u)
