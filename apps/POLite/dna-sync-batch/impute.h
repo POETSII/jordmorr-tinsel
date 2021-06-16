@@ -65,6 +65,8 @@ struct ImpState {
     uint32_t currentIndex; //
     // Old Index
     uint32_t oldIndex; //
+    // Old Index
+    uint32_t alphaTag; //
     // Node Alphas
     float alpha; //
     // Node Betas
@@ -129,6 +131,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
         s->rdyFlags = 0u;
         s->nxtRdyFlags = 0u;
         s->sentFlags = 0u;
+        s->alphaTag = 0u;
         
         s->alpha = 0.0f;
         s->beta = 0.0f;
@@ -288,6 +291,8 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                 
                 // Increase number of alphas calculated
                 s->alphaCnt++;
+                // flag that alpha has been updated in cycle (used for linear interp posterior)
+                s->alphaTag = 1u;
                 
                 // Send alpha inductively if not in last column
                 if ( (s->x) != (NOOFTARG - 1u) ) {
@@ -372,10 +377,14 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                     s->betaLin[x] = s->nextBeta - ((s->dmLocal[(LINRATIO - 2u) - x] / s->totalDistance) * totalDiff);
                     s->nextBeta = s->betaLin[x];
                     
+                    // Calculate Linear Interpolation Posteriors
+                    s->posterior[x + 1u][s->betaCnt - 1u] = s->posterior[x + 1u][s->betaCnt - 1u] * s->betaLin[x];
+                    
                 }
                 
-                // Calculate Posterior
+                // Calculate Current Posterior
                 s->posterior[0u][s->betaCnt - 1u] = s->posterior[0u][s->betaCnt - 1u] * s->beta;
+                
                 
                 // Send accumulation message if posterior probability is complete
                 if ((s->alphaCnt >= s->betaCnt) && (s->y != NOOFSTATES - 1)) {
@@ -405,6 +414,16 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
             
                     s->alphaLin[x] = prevAlpha - ((s->dmLocal[x] / s->totalDistance) * totalDiff);
                     prevAlpha = s->alphaLin[x];
+                    
+                    
+                    if (s->alphaTag) {
+                        // Calculate Linear Interpolation Posteriors
+                        s->posterior[x + 1u][s->alphaCnt - 3u] = s->posterior[x + 1u][s->alphaCnt - 3u] * s->alphaLin[x];
+                    }
+                    else {
+                        // Calculate Linear Interpolation Posteriors
+                        s->posterior[x + 1u][s->alphaCnt - 2u] = s->posterior[x + 1u][s->alphaCnt - 2u] * s->alphaLin[x];
+                    }
 
                 }
                 
@@ -477,6 +496,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
         // Transfer and Clear Ready Flags
         s->rdyFlags = s->nxtRdyFlags;
         s->nxtRdyFlags = 0u;
+        s->alphaTag = 0u;
         
         // Clear sent flags
         s->sentFlags = 0u;
@@ -553,8 +573,8 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
         
         msg->msgtype = s->id;
 #ifdef IMPDEBUG
-        msg->val = (float)s->sentCnt;
-        //msg->val = s->betaLin[2u];
+        //msg->val = (float)s->sentCnt;
+        msg->val = s->posterior[0u][0u];
         //msg->val = (float)s->targCnt;
 #else
         msg->val = 1.0f;
