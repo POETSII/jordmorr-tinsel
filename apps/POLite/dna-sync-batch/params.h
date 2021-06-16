@@ -11,8 +11,9 @@
  * ************************************************/
 
 // Model Size
-#define NOOFSTATES (161)
-#define NOOFOBS (15456)
+#define NOOFSTATES (10)
+#define NOOFTARG (101)
+#define NOOFOBS (1001)
 
 #define LINRATIO (10)
 
@@ -20,10 +21,8 @@
 #define NE (1000000)
 #define ERRORRATE (10000)
 
-#define NOOFTARG (1)
-
 // Pre-processor selectors
-//#define IMPDEBUG (1)
+#define IMPDEBUG (1)
 
 /***************************************************
  * <- And here

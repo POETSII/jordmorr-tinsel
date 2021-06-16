@@ -32,16 +32,16 @@ int main(int argc, char **argv)
     
     // Connection to tinsel machine
     //HostLink hostLink;
-    HostLink hostLink(2, 4);
+    HostLink hostLink(1, 1);
 
     // Create POETS graph
     //PGraph<ImpDevice, ImpState, None, ImpMessage> graph;
-    PGraph<ImpDevice, ImpState, None, ImpMessage> graph(2, 4);
+    PGraph<ImpDevice, ImpState, None, ImpMessage> graph(1, 1);
 
     // Create 2D mesh of devices
-    static PDeviceId mesh[NOOFSTATES][NOOFOBS];
+    static PDeviceId mesh[NOOFSTATES][NOOFTARG];
     for (uint32_t y = 0; y < NOOFSTATES; y++) {
-        for (uint32_t x = 0; x < NOOFOBS; x++) {
+        for (uint32_t x = 0; x < NOOFTARG; x++) {
             
                 mesh[y][x] = graph.newDevice();
                 
@@ -52,7 +52,7 @@ int main(int argc, char **argv)
     
     // Add induction edges
     // Forward Connections
-    for (uint32_t x = 0; x < NOOFOBS - 1; x++) {
+    for (uint32_t x = 0; x < NOOFTARG - 1; x++) {
         for (uint32_t y = 0; y < NOOFSTATES; y++) {
             
             for (uint32_t z = 0; z < NOOFSTATES; z++) {
@@ -64,7 +64,7 @@ int main(int argc, char **argv)
     
     
     // Backward Connections
-    for (uint32_t x = 1; x < NOOFOBS; x++) {
+    for (uint32_t x = 1; x < NOOFTARG; x++) {
         for (uint32_t y = 0; y < NOOFSTATES; y++) {
             
             for (uint32_t z = 0; z < NOOFSTATES; z++) {
@@ -75,11 +75,20 @@ int main(int argc, char **argv)
     }
   
     // Accumulation Messages
-    for (uint32_t x = 0; x < NOOFOBS; x++) {
+    for (uint32_t x = 0; x < NOOFTARG; x++) {
         for (uint32_t y = 0; y < NOOFSTATES - 1; y++) {
             
             graph.addEdge(mesh[y][x], 2, mesh[NOOFSTATES - 1][x]);
             
+        }
+    }
+    
+    // Linear Interpolation Connections
+    for (uint32_t x = 1; x < NOOFTARG; x++) {
+        for (uint32_t y = 0; y < NOOFSTATES; y++) {
+            
+            graph.addEdge(mesh[y][x], 3, mesh[y][x-1]);
+
         }
     }
     
@@ -97,16 +106,25 @@ int main(int argc, char **argv)
     gettimeofday(&start_init, NULL);
     
     // Initialise device coordinates/dimensions
-    for (uint32_t x = 0; x < NOOFOBS; x++) {
+    for (uint32_t x = 0; x < NOOFTARG; x++) {
         
         float tau_m0 = 0.0f;
         float same0 = 0.0f;
         float diff0 = 0.0f;
         
         // Tau M Values
-        if ((x != (NOOFOBS - 1u))) {
+        if ((x != (NOOFTARG - 1u))) {
             
-            tau_m0 = (1 - exp((-4 * NE * dm[x]) / NOOFSTATES));
+            // Caluclate total genetic distance
+            uint32_t currentIndex = x * LINRATIO;
+            float geneticDistance = 0.0f;
+            for (uint32_t y = 0u; y < LINRATIO; y++) {
+                
+                geneticDistance += dm[currentIndex + y];
+                
+            }
+            
+            tau_m0 = (1 - exp((-4 * NE * geneticDistance) / NOOFSTATES));
             same0 = (1 - tau_m0) + (tau_m0 / NOOFSTATES);
             diff0 = tau_m0 / NOOFSTATES;
             
@@ -119,7 +137,17 @@ int main(int argc, char **argv)
         
         if (x != 0u) {
             
-            tau_m1 = (1 - exp((-4 * NE * dm[x - 1u]) / NOOFSTATES));
+            // Caluclate total genetic distance
+            uint32_t currentIndex = (x - 1u) * LINRATIO;
+            float geneticDistance = 0.0f;
+            
+            for (uint32_t y = 0u; y < LINRATIO; y++) {
+                
+                geneticDistance += dm[currentIndex + y];
+                
+            }
+            
+            tau_m1 = (1 - exp((-4 * NE * geneticDistance ) / NOOFSTATES));
             same1 = (1 - tau_m1) + (tau_m1 / NOOFSTATES);
             diff1 = tau_m1 / NOOFSTATES;
             
@@ -139,13 +167,8 @@ int main(int argc, char **argv)
             
             uint32_t match = 0u;
             
-            if (observation[x][1] == 2u) {
-                match = 2u;
-            }
-            else {
-                if (hmm_labels[y][x] == observation[x][1]) {
-                    match = 1u;
-                }
+            if (hmm_labels[y][x] == observation[x][1]) {
+                match = 1u;
             }
             
             // Initialise Match Value
@@ -157,9 +180,20 @@ int main(int argc, char **argv)
             graph.devices[mesh[y][x]]->state.fwdSame = same1;
             graph.devices[mesh[y][x]]->state.fwdDiff = diff1;
             
+            for (uint32_t i = 0u; i < LINRATIO; i++) {
+                
+                graph.devices[mesh[y][x]]->state.dmLocal[i] = dm[(x * LINRATIO) + i];
+                
+            }
+            
             // Initialise Posterior Values
             for (uint32_t i = 0u; i < NOOFTARG; i++) {
-                graph.devices[mesh[y][x]]->state.posterior[i] = 1.0f;
+                
+                for (uint32_t j = 0u; j < LINRATIO; j++) {
+                    
+                    graph.devices[mesh[y][x]]->state.posterior[j][i] = 1.0f;
+                    
+                }
             }
             
             
@@ -247,10 +281,10 @@ int main(int argc, char **argv)
         fclose (fp);
         */
         
-        static float result[NOOFSTATES][NOOFOBS] {};
+        static float result[NOOFSTATES][NOOFTARG] {};
 
         // Receive final value of each device
-        for (uint32_t i = 0; i < (NOOFSTATES*NOOFOBS); i++) {
+        for (uint32_t i = 0; i < (NOOFSTATES*NOOFTARG); i++) {
             
             // Receive message
             PMessage<ImpMessage> msg;
@@ -271,9 +305,9 @@ int main(int argc, char **argv)
         if (alphaSelect) {
         
             for (uint32_t y = 0u; y < NOOFSTATES; y++) {
-                for (uint32_t x = 0u; x < NOOFOBS; x++) {
+                for (uint32_t x = 0u; x < NOOFTARG; x++) {
                 
-                    if (x != (NOOFOBS - 1u) ) {
+                    if (x != (NOOFTARG - 1u) ) {
                         fprintf(fp, "%e,", result[y][x]);
                     }
                     else {
@@ -286,13 +320,13 @@ int main(int argc, char **argv)
         }
         else {
             for (uint32_t y = 0u; y < NOOFSTATES; y++) {
-                for (uint32_t x = 0u; x < NOOFOBS; x++) {
+                for (uint32_t x = 0u; x < NOOFTARG; x++) {
                 
-                    if (x != (NOOFOBS - 1u) ) {
-                        fprintf(fp, "%e,", result[y][(NOOFOBS - 1) - x]);
+                    if (x != (NOOFTARG - 1u) ) {
+                        fprintf(fp, "%e,", result[y][(NOOFTARG - 1) - x]);
                     }
                     else {
-                        fprintf(fp, "%e", result[y][(NOOFOBS - 1) - x]);
+                        fprintf(fp, "%e", result[y][(NOOFTARG - 1) - x]);
                     }
                 
                 }

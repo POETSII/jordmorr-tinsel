@@ -11,6 +11,7 @@
 const uint32_t FORWARD = 0;
 const uint32_t BACKWARD =  1;
 const uint32_t ACCUMULATE = 2;
+const uint32_t LINEARINTERP = 3;
 
 // Flags
 
@@ -20,6 +21,8 @@ const uint32_t ACCA = (1 << 2); //4
 const uint32_t ALPHAPOST = (1 << 3); //8
 const uint32_t BETAPOST = (1 << 4); //16
 const uint32_t ALLELECNTS = (1 << 5); //32
+const uint32_t ALPHALIN = (1 << 6); //64
+const uint32_t BETALIN = (1 << 7); //128
 
 struct ImpMessage {
     
@@ -67,7 +70,9 @@ struct ImpState {
     // Node Betas
     float beta; //
     // Major Posterior Probability
-    float posterior[NOOFTARG]; //
+    float posterior[LINRATIO][NOOFTARG]; //
+    // Local Genetic Distances
+    float dmLocal[LINRATIO];
     // Major Posterior Probability
     float majPosterior; //
     // Minor Posterior Probability
@@ -84,23 +89,23 @@ struct ImpState {
     float oldAlpha; //
     // Node Old Betas
     float oldBeta; //
+    // Node Old Alphas
+    float oldOldAlpha; //
+    // Node Old Betas
+    float oldOldBeta; //
     // Node Current Posterior
     float currentPosterior; //
     // Node Old Posterior
     float oldPosterior; //
-    
-    
-#ifdef LINEARINTERP    
-    // Linear Interpolation Results
-    // Alpha
+    // Total genetic distance
+    float totalDistance;
+    // Alpha Linear Interpolation Values
     float alphaLin[LINRATIO - 1u];
-    // Beta
+    // Beta Linear Interpolation Values
     float betaLin[LINRATIO - 1u];
-    // Previous Alpha
-    float prevAlpha;
-    // Previous Beta
-    float prevBeta;
-#endif
+    // Beta Linear Interpolation Storage
+    float nextBeta;
+
     
 #ifdef IMPDEBUG
         // Sent Counter
@@ -127,11 +132,21 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
         
         s->alpha = 0.0f;
         s->beta = 0.0f;
+        s->oldAlpha = 0.0f;
+        s->oldBeta = 0.0f;
         s->majPosterior = 0.0f;
         s->minPosterior = 0.0f;
         
         s->currentPosterior = 0.0f;
         s->currentIndex = 0u;
+        
+        s->totalDistance = 0.0f;
+        
+        for (uint32_t x = 0u; x < LINRATIO; x++) {
+            
+            s->totalDistance += s->dmLocal[x];
+            
+        }
         
 #ifdef IMPDEBUG
         s->sentCnt = 0u;
@@ -152,6 +167,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
             
             s->rdyFlags &= (~ALPHA);
             s->sentFlags |= ALPHA;
+                       
         
         }
         
@@ -164,6 +180,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
             
             s->rdyFlags &= (~BETA);
             s->sentFlags |= BETA;
+
         }
         
         if (*readyToSend == Pin(ACCUMULATE)) {
@@ -175,6 +192,30 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
             
             s->rdyFlags &= (~ACCA);
             s->sentFlags |= ACCA;
+            
+        }
+        
+        if (*readyToSend == Pin(LINEARINTERP)) {
+            
+            if (s->rdyFlags & ALPHALIN) {
+                msg->msgtype = LINEARINTERP;
+                msg->stateNo = ALPHA;
+                msg->val = s->oldAlpha;
+                
+                s->rdyFlags &= (~ALPHALIN);
+                s->sentFlags |= ALPHALIN;
+        
+            }
+            else if (s->rdyFlags & BETALIN) {
+                msg->msgtype = LINEARINTERP;
+                msg->stateNo = BETA;
+                msg->val = s->oldBeta;
+                
+                s->rdyFlags &= (~BETALIN);
+                s->sentFlags |= BETALIN;
+                
+            }
+            
         }
         
         if ((s->rdyFlags & ALPHA) && !(s->sentFlags & ALPHA)) {
@@ -195,6 +236,18 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
             *readyToSend = Pin(ACCUMULATE);
             
         }
+        else if ((s->rdyFlags & ALPHALIN) && !(s->sentFlags & ALPHALIN)) {
+            // Have We calculated alpha but not sent the linear interpolation message?
+            
+            *readyToSend = Pin(LINEARINTERP);
+            
+        }
+        else if ((s->rdyFlags & BETALIN) && !(s->sentFlags & BETALIN)) {
+            // Have We calculated alpha but not sent the linear interpolation message?
+            
+            *readyToSend = Pin(LINEARINTERP);
+            
+        }
         else {
             *readyToSend = No;
         }
@@ -210,9 +263,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
             if (msg->stateNo == s->y) {
                 
                 s->alpha += msg->val * s->fwdSame;
-#ifdef LINEARINTERP                 
-                s->prevAlpha = msg->val;
-#endif                
+             
             }
             else {
                 
@@ -239,16 +290,21 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                 s->alphaCnt++;
                 
                 // Send alpha inductively if not in last column
-                if ( (s->x) != (NOOFOBS - 1u) ) {
+                if ( (s->x) != (NOOFTARG - 1u) ) {
                     s->nxtRdyFlags |= ALPHA;
                 }
                 
+                // Send alpha for linear interpolation if not in the first column
+                if ( (s->x) != 0u ) {
+                    s->nxtRdyFlags |= ALPHALIN;
+                }
+                
                 // Calculate Posterior
-                s->posterior[s->alphaCnt - 1u] = s->posterior[s->alphaCnt - 1u] * s->alpha;
+                s->posterior[0u][s->alphaCnt - 1u] = s->posterior[0u][s->alphaCnt - 1u] * s->alpha;
                 
                 // Send accumulation message if posterior probability is complete
                 if ((s->betaCnt >= s->alphaCnt) && (s->y != NOOFSTATES - 1)) {
-                    s->currentPosterior = s->posterior[s->alphaCnt - 1u];
+                    s->currentPosterior = s->posterior[0u][s->alphaCnt - 1u];
                     s->currentIndex = s->alphaCnt - 1u;
                     s->nxtRdyFlags |= ACCA;
                 }
@@ -259,7 +315,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
         
         }
         
-        
+        // Received Beta Inductive Message (Reverse Algo)
         if (msg->msgtype == BACKWARD) {
             
             float emissionProb = 0.0f;
@@ -277,9 +333,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
             if (msg->stateNo == s->y) {
                 
                 s->beta += msg->val * s->bwdSame * emissionProb;
-#ifdef LINEARINTERP                 
-                s->prevBeta = msg->val;
-#endif                
+              
             }
             else {
                 
@@ -300,12 +354,32 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                     s->nxtRdyFlags |= BETA;
                 }
                 
+                // Send beta for linear interpolation if not in the first column
+                if ( (s->x) != 0u ) {
+                    s->nxtRdyFlags |= BETALIN;
+                }
+                
+                // Calculate linear interpolation values
+                float prevBeta = s->beta;
+                float totalDiff = s->nextBeta - prevBeta;
+                
+#ifdef IMPDEBUG
+    s->sentCnt++;
+#endif 
+            
+                for (uint32_t x = 0u; x < (LINRATIO - 1u); x++) {
+                    
+                    s->betaLin[x] = s->nextBeta - ((s->dmLocal[(LINRATIO - 2u) - x] / s->totalDistance) * totalDiff);
+                    s->nextBeta = s->betaLin[x];
+                    
+                }
+                
                 // Calculate Posterior
-                s->posterior[s->betaCnt - 1u] = s->posterior[s->betaCnt - 1u] * s->beta;
+                s->posterior[0u][s->betaCnt - 1u] = s->posterior[0u][s->betaCnt - 1u] * s->beta;
                 
                 // Send accumulation message if posterior probability is complete
                 if ((s->alphaCnt >= s->betaCnt) && (s->y != NOOFSTATES - 1)) {
-                    s->currentPosterior = s->posterior[s->betaCnt - 1u];
+                    s->currentPosterior = s->posterior[0u][s->betaCnt - 1u];
                     s->currentIndex = s->betaCnt - 1u;
                     s->nxtRdyFlags |= ACCA;
                 }
@@ -316,7 +390,34 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
         
         }
         
-        // Received Alpha Accumulation Message (Forward Algo)
+        // Received Linear Interpolation Message
+        if (msg->msgtype == LINEARINTERP) {
+            
+            // Determine Message type -> Alpha / Beta
+            if (msg->stateNo == ALPHA) {
+                
+                // Calculate linear interpolation values
+                float nextAlpha = msg->val;
+                float prevAlpha = s->oldOldAlpha;
+                float totalDiff = prevAlpha - nextAlpha;
+                
+                for (uint32_t x = 0u; x < (LINRATIO - 1u); x++) {
+            
+                    s->alphaLin[x] = prevAlpha - ((s->dmLocal[x] / s->totalDistance) * totalDiff);
+                    prevAlpha = s->alphaLin[x];
+
+                }
+                
+            }
+            else if (msg->stateNo == BETA) {
+                
+                s->nextBeta = msg->val;
+                
+            }
+            
+        }
+        
+        // Received Accumulation Message (Forward Algo)
         if (msg->msgtype == ACCUMULATE) {
             
             s->accaCnt++;
@@ -338,22 +439,18 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                 // If the final node is a major allele . . (stateNo is holding the posterior index)
                 if (s->label == 0u) {
                     
-                    s->majPosterior += s->posterior[msg->stateNo];
+                    s->majPosterior += s->posterior[0u][msg->stateNo];
                     
                 }
                 else {
                     
-                    s->minPosterior += s->posterior[msg->stateNo];
+                    s->minPosterior += s->posterior[0u][msg->stateNo];
                     
                 }
                 
                 s->nxtRdyFlags |= ALLELECNTS;
 
                 s->accaCnt = 0u;
-                
-#ifdef IMPDEBUG
-                s->sentCnt++;
-#endif
                 
             }
             
@@ -365,6 +462,9 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
     inline bool step() {
         
         // Copy Values Over to enable both stages of processing (induction and accumulation)
+        
+        s->oldOldAlpha = s->oldAlpha;
+        s->oldOldBeta = s->oldBeta;
         s->oldAlpha = s->alpha;
         s->oldBeta = s->beta;
         s->oldPosterior = s->currentPosterior;
@@ -397,11 +497,12 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
             
         }
         // Calculate and send initial betas
-        else if (((s->x) == (NOOFOBS - 1u)) && (s->targCnt < NOOFTARG)) {
+        else if (((s->x) == (NOOFTARG - 1u)) && (s->targCnt < NOOFTARG)) {
             
             s->beta = 1.0f;
             s->oldBeta = 1.0f;
             s->rdyFlags |= BETA;
+            s->rdyFlags |= BETALIN;
             
             // Increase number of betas calculated
             s->betaCnt++;
@@ -426,6 +527,14 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
             
         }
         
+        if ((s->rdyFlags & BETALIN) && !(s->sentFlags & BETALIN)) {
+            
+            *readyToSend = Pin(LINEARINTERP);
+            
+            return true;
+            
+        }
+        
         if ((s->rdyFlags & ACCA) && !(s->sentFlags & ACCA)) {
             
             *readyToSend = Pin(ACCUMULATE);
@@ -445,6 +554,8 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
         msg->msgtype = s->id;
 #ifdef IMPDEBUG
         msg->val = (float)s->sentCnt;
+        //msg->val = s->betaLin[2u];
+        //msg->val = (float)s->targCnt;
 #else
         msg->val = 1.0f;
 #endif
