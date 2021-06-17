@@ -74,7 +74,7 @@ struct ImpState {
     // Node Betas
     float beta; //
     // Major Posterior Probability
-    float posterior[LINRATIO][NOOFTARG]; //
+    float posterior[LINRATIO][NOOFHAPS]; //
     // Local Genetic Distances
     float dmLocal[LINRATIO];
     // Major Posterior Probability
@@ -389,7 +389,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                 
                 
                 // Send accumulation message if posterior probability is complete
-                if ((s->alphaCnt >= s->betaCnt) && (s->y != NOOFSTATES - 1u)) {
+                if ( (s->alphaCnt >= s->betaCnt) && (s->y != NOOFSTATES - 1u) && (s->x != (NOOFTARG / 2u)) ) {
                     s->currentIndex = s->betaCnt - 1u;
                     s->nxtRdyFlags |= ACCA;
                 }
@@ -464,11 +464,11 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                 
             }
             
-            if (s->accaCnt[linPos] == NOOFSTATES - 1) {
-                
 #ifdef IMPDEBUG
     s->sentCnt++;
 #endif
+            
+            if (s->accaCnt[linPos] == NOOFSTATES - 1u) {
                 
                 // If the final node is a major allele . . (stateNo is holding the posterior index)
                 if (s->label == 0u) {
@@ -525,7 +525,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
         }
         
         // Calculate and send initial alphas
-        if ((s->x == 0) && (s->targCnt < NOOFTARG)) {
+        if ((s->x == 0) && (s->targCnt < NOOFHAPS)) {
             
             s->alpha = 1.0f / NOOFSTATES;
             s->oldAlpha = 1.0f / NOOFSTATES;
@@ -536,7 +536,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
             
         }
         // Calculate and send initial betas
-        else if (((s->x) == (NOOFTARG - 1u)) && (s->targCnt < NOOFTARG)) {
+        else if (((s->x) == (NOOFTARG - 1u)) && (s->targCnt < NOOFHAPS)) {
             
             s->beta = 1.0f;
             s->oldBeta = 1.0f;
@@ -594,7 +594,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
 #ifdef IMPDEBUG
         msg->val = (float)s->sentCnt;
         //msg->val = s->posterior[0u][0u];
-        //msg->val = (float)s->targCnt;
+        //msg->val = (float)s->accaCnt[0u];
 #else
         msg->val = 1.0f;
 #endif
