@@ -42,7 +42,7 @@ struct ImpState {
     // Device id
     uint32_t id; //
     // Message Counters
-    uint32_t fwdRecCnt, bwdRecCnt, accaCnt; //
+    uint32_t fwdRecCnt, bwdRecCnt, accaCnt[LINRATIO]; //
     // Mesh Coordinates
     uint32_t x, y; //
     // Node Label
@@ -67,6 +67,8 @@ struct ImpState {
     uint32_t oldIndex; //
     // Old Index
     uint32_t alphaTag; //
+    // Accumulator Count
+    uint32_t accSendCnt; //
     // Node Alphas
     float alpha; //
     // Node Betas
@@ -76,9 +78,9 @@ struct ImpState {
     // Local Genetic Distances
     float dmLocal[LINRATIO];
     // Major Posterior Probability
-    float majPosterior; //
+    float majPosterior[LINRATIO]; //
     // Minor Posterior Probability
-    float minPosterior; //
+    float minPosterior[LINRATIO]; //
     // Node Betas
     float fwdSame; //
     // Node Betas
@@ -95,10 +97,6 @@ struct ImpState {
     float oldOldAlpha; //
     // Node Old Betas
     float oldOldBeta; //
-    // Node Current Posterior
-    float currentPosterior; //
-    // Node Old Posterior
-    float oldPosterior; //
     // Total genetic distance
     float totalDistance;
     // Alpha Linear Interpolation Values
@@ -125,7 +123,6 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
         s->bwdRecCnt = 0u;
         s->alphaCnt = 0u;
         s->betaCnt = 0u;
-        s->accaCnt = 0u;
         s->targCnt = 0u;
         
         s->rdyFlags = 0u;
@@ -137,17 +134,22 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
         s->beta = 0.0f;
         s->oldAlpha = 0.0f;
         s->oldBeta = 0.0f;
-        s->majPosterior = 0.0f;
-        s->minPosterior = 0.0f;
         
-        s->currentPosterior = 0.0f;
         s->currentIndex = 0u;
         
         s->totalDistance = 0.0f;
         
         for (uint32_t x = 0u; x < LINRATIO; x++) {
             
+            // Calculate Total Distance
             s->totalDistance += s->dmLocal[x];
+            
+            // Clear maj/min posteriors
+            s->majPosterior[x] = 0.0f;
+            s->minPosterior[x] = 0.0f;
+            
+            // Clear accumulator message counts
+            s->accaCnt[x] = 0u;
             
         }
         
@@ -170,8 +172,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
             
             s->rdyFlags &= (~ALPHA);
             s->sentFlags |= ALPHA;
-                       
-        
+    
         }
         
         if (*readyToSend == Pin(BACKWARD)) {
@@ -189,12 +190,16 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
         if (*readyToSend == Pin(ACCUMULATE)) {
             
             msg->msgtype = ACCUMULATE;
-            msg->stateNo = s->oldIndex;
-            msg->match = s->label;
-            msg->val = s->oldPosterior;
+            msg->stateNo = s->oldIndex;            
+            msg->match = (s->accSendCnt << 16u) + s->label;
+            msg->val = s->posterior[s->accSendCnt][s->oldIndex];
             
-            s->rdyFlags &= (~ACCA);
-            s->sentFlags |= ACCA;
+            s->accSendCnt++;
+            
+            if (s->accSendCnt >= 10u) {
+                s->rdyFlags &= (~ACCA);
+                s->sentFlags |= ACCA;
+            }
             
         }
         
@@ -294,6 +299,9 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                 // flag that alpha has been updated in cycle (used for linear interp posterior)
                 s->alphaTag = 1u;
                 
+                // Calculate Posterior
+                s->posterior[0u][s->alphaCnt - 1u] = s->posterior[0u][s->alphaCnt - 1u] * s->alpha;
+                
                 // Send alpha inductively if not in last column
                 if ( (s->x) != (NOOFTARG - 1u) ) {
                     s->nxtRdyFlags |= ALPHA;
@@ -304,14 +312,12 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                     s->nxtRdyFlags |= ALPHALIN;
                 }
                 
-                // Calculate Posterior
-                s->posterior[0u][s->alphaCnt - 1u] = s->posterior[0u][s->alphaCnt - 1u] * s->alpha;
-                
-                // Send accumulation message if posterior probability is complete
-                if ((s->betaCnt >= s->alphaCnt) && (s->y != NOOFSTATES - 1)) {
-                    s->currentPosterior = s->posterior[0u][s->alphaCnt - 1u];
+                // Account for no linear interpolation in final column
+                if ((s->x == NOOFTARG - 1u) && (s->y != NOOFSTATES - 1u)){
+
                     s->currentIndex = s->alphaCnt - 1u;
                     s->nxtRdyFlags |= ACCA;
+                    
                 }
                 
                 s->fwdRecCnt = 0u;
@@ -367,10 +373,6 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                 // Calculate linear interpolation values
                 float prevBeta = s->beta;
                 float totalDiff = s->nextBeta - prevBeta;
-                
-#ifdef IMPDEBUG
-    s->sentCnt++;
-#endif 
             
                 for (uint32_t x = 0u; x < (LINRATIO - 1u); x++) {
                     
@@ -387,8 +389,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                 
                 
                 // Send accumulation message if posterior probability is complete
-                if ((s->alphaCnt >= s->betaCnt) && (s->y != NOOFSTATES - 1)) {
-                    s->currentPosterior = s->posterior[0u][s->betaCnt - 1u];
+                if ((s->alphaCnt >= s->betaCnt) && (s->y != NOOFSTATES - 1u)) {
                     s->currentIndex = s->betaCnt - 1u;
                     s->nxtRdyFlags |= ACCA;
                 }
@@ -405,26 +406,33 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
             // Determine Message type -> Alpha / Beta
             if (msg->stateNo == ALPHA) {
                 
+                uint32_t offset = 0u;
+                
                 // Calculate linear interpolation values
                 float nextAlpha = msg->val;
                 float prevAlpha = s->oldOldAlpha;
                 float totalDiff = prevAlpha - nextAlpha;
+                
+                if (s->alphaTag) {
+                    offset = 3u;
+                }
+                else {
+                    offset = 2u;
+                }
                 
                 for (uint32_t x = 0u; x < (LINRATIO - 1u); x++) {
             
                     s->alphaLin[x] = prevAlpha - ((s->dmLocal[x] / s->totalDistance) * totalDiff);
                     prevAlpha = s->alphaLin[x];
                     
-                    
-                    if (s->alphaTag) {
-                        // Calculate Linear Interpolation Posteriors
-                        s->posterior[x + 1u][s->alphaCnt - 3u] = s->posterior[x + 1u][s->alphaCnt - 3u] * s->alphaLin[x];
-                    }
-                    else {
-                        // Calculate Linear Interpolation Posteriors
-                        s->posterior[x + 1u][s->alphaCnt - 2u] = s->posterior[x + 1u][s->alphaCnt - 2u] * s->alphaLin[x];
-                    }
+                    s->posterior[x + 1u][s->alphaCnt - offset] = s->posterior[x + 1u][s->alphaCnt - offset] * s->alphaLin[x];
 
+                }
+                
+                // Send accumulation message if posterior probability is complete
+                if ((s->betaCnt >= s->alphaCnt) && (s->y != NOOFSTATES - 1)) {
+                    s->currentIndex = s->alphaCnt - offset;
+                    s->nxtRdyFlags |= ACCA;
                 }
                 
             }
@@ -439,37 +447,44 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
         // Received Accumulation Message (Forward Algo)
         if (msg->msgtype == ACCUMULATE) {
             
-            s->accaCnt++;
+            // Get Linear Interp Postition
+            uint32_t linPos = (msg->match >> 16u) & 0xFFFF;
+            
+            s->accaCnt[linPos]++;
             
             // If the transmitting node is a major allele . . 
-            if (msg->match == 0u) {
+            if ((msg->match & 1u) == 0u) {
                 
-                s->majPosterior += msg->val;
+                s->majPosterior[linPos] += msg->val;
                 
             }
             else {
                 
-                s->minPosterior += msg->val;
+                s->minPosterior[linPos] += msg->val;
                 
             }
             
-            if (s->accaCnt == NOOFSTATES - 1) {
+            if (s->accaCnt[linPos] == NOOFSTATES - 1) {
+                
+#ifdef IMPDEBUG
+    s->sentCnt++;
+#endif
                 
                 // If the final node is a major allele . . (stateNo is holding the posterior index)
                 if (s->label == 0u) {
                     
-                    s->majPosterior += s->posterior[0u][msg->stateNo];
+                    s->majPosterior[linPos] += s->posterior[linPos][msg->stateNo];
                     
                 }
                 else {
                     
-                    s->minPosterior += s->posterior[0u][msg->stateNo];
+                    s->minPosterior[linPos] += s->posterior[linPos][msg->stateNo];
                     
                 }
                 
                 s->nxtRdyFlags |= ALLELECNTS;
 
-                s->accaCnt = 0u;
+                s->accaCnt[linPos] = 0u;
                 
             }
             
@@ -486,12 +501,14 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
         s->oldOldBeta = s->oldBeta;
         s->oldAlpha = s->alpha;
         s->oldBeta = s->beta;
-        s->oldPosterior = s->currentPosterior;
         s->oldIndex = s->currentIndex;
         
         // Clear alpha/beta values ready for next timestep
         s->alpha = 0.0f;
         s->beta = 0.0f;
+        
+        // Clean accumulator send count
+        s->accSendCnt = 0u;
         
         // Transfer and Clear Ready Flags
         s->rdyFlags = s->nxtRdyFlags;
@@ -502,8 +519,10 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
         s->sentFlags = 0u;
         
         // Clear Posterior values -> JPM This needs reading if data is to be transferred out
-        s->majPosterior = 0u;
-        s->minPosterior = 0u;
+        for (uint32_t x = 0u; x < (LINRATIO - 1u); x++) {
+            s->majPosterior[x] = 0.0f;
+            s->minPosterior[x] = 0.0f;
+        }
         
         // Calculate and send initial alphas
         if ((s->x == 0) && (s->targCnt < NOOFTARG)) {
@@ -573,8 +592,8 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
         
         msg->msgtype = s->id;
 #ifdef IMPDEBUG
-        //msg->val = (float)s->sentCnt;
-        msg->val = s->posterior[0u][0u];
+        msg->val = (float)s->sentCnt;
+        //msg->val = s->posterior[0u][0u];
         //msg->val = (float)s->targCnt;
 #else
         msg->val = 1.0f;
