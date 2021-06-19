@@ -32,11 +32,11 @@ int main(int argc, char **argv)
     
     // Connection to tinsel machine
     //HostLink hostLink;
-    HostLink hostLink(2, 4);
+    HostLink hostLink(1, 1);
 
     // Create POETS graph
     //PGraph<ImpDevice, ImpState, None, ImpMessage> graph;
-    PGraph<ImpDevice, ImpState, None, ImpMessage> graph(2, 4);
+    PGraph<ImpDevice, ImpState, None, ImpMessage> graph(1, 1);
 
     // Create 2D mesh of devices
     static PDeviceId mesh[NOOFSTATES][NOOFTARG];
@@ -187,7 +187,7 @@ int main(int argc, char **argv)
             }
             
             // Initialise Posterior Values
-            for (uint32_t i = 0u; i < NOOFTARG; i++) {
+            for (uint32_t i = 0u; i < NOOFHAPS; i++) {
                 
                 for (uint32_t j = 0u; j < LINRATIO; j++) {
                     

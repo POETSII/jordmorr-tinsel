@@ -311,15 +311,15 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                 if ( (s->x) != 0u ) {
                     s->nxtRdyFlags |= ALPHALIN;
                 }
-                
+/*                
                 // Account for no linear interpolation in final column
                 if ((s->x == NOOFTARG - 1u) && (s->y != NOOFSTATES - 1u)){
 
                     s->currentIndex = s->alphaCnt - 1u;
                     s->nxtRdyFlags |= ACCA;
-                    
+                  
                 }
-                
+*/                  
                 s->fwdRecCnt = 0u;
                 
             }
@@ -387,13 +387,13 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                 // Calculate Current Posterior
                 s->posterior[0u][s->betaCnt - 1u] = s->posterior[0u][s->betaCnt - 1u] * s->beta;
                 
-                
+/*                
                 // Send accumulation message if posterior probability is complete
                 if ( (s->alphaCnt >= s->betaCnt) && (s->y != NOOFSTATES - 1u) && (s->x != (NOOFTARG / 2u)) ) {
                     s->currentIndex = s->betaCnt - 1u;
                     s->nxtRdyFlags |= ACCA;
                 }
-                
+*/                
                 s->bwdRecCnt = 0u;
 
             }
@@ -428,13 +428,13 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                     s->posterior[x + 1u][s->alphaCnt - offset] = s->posterior[x + 1u][s->alphaCnt - offset] * s->alphaLin[x];
 
                 }
-                
+ /*               
                 // Send accumulation message if posterior probability is complete
                 if ((s->betaCnt >= s->alphaCnt) && (s->y != NOOFSTATES - 1)) {
                     s->currentIndex = s->alphaCnt - offset;
                     s->nxtRdyFlags |= ACCA;
                 }
-                
+*/                
             }
             else if (msg->stateNo == BETA) {
                 

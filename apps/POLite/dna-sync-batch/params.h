@@ -11,9 +11,9 @@
  * ************************************************/
 
 // Model Size
-#define NOOFSTATES (3)
-#define NOOFTARG (31)
-#define NOOFOBS (301)
+#define NOOFSTATES (10)
+#define NOOFTARG (101)
+#define NOOFOBS (1001)
 
 #define NOOFHAPS (10000)
 
