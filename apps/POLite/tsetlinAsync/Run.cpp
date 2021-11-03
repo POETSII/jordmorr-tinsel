@@ -270,7 +270,7 @@ int main(int argc, char **argv)
        
 #else
 
-    static float result[TRAINSIZE] {};
+    static uint32_t result[TRAINSIZE] {};
 
     // Receive final value of each device
     for (uint32_t i = 0; i < TRAINSIZE; i++) {
@@ -280,13 +280,13 @@ int main(int argc, char **argv)
             hostLink.recvMsg(&msg, sizeof(msg));
 
             // Save final value
-            result[graph.devices[msg.payload.srcClause]->state.clauseNo] = msg.payload.vote;
+            result[graph.devices[msg.payload.srcClause]->state.clauseNo] = msg.payload.dpX;
             
     }
     
     for (uint32_t i = 0; i < TRAINSIZE; i++) {
      
-        printf("%d, %f \n", i, result[i]);
+        printf("%d, %d \n", i, result[i]);
         
     }
 

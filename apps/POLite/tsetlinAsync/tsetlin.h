@@ -11,6 +11,12 @@
 #define PENALTY (0u)
 #define REWARD (1u)
 
+// GLOBALS
+#ifdef TMDEBUG
+    // Test Counter
+    uint32_t testCnt;
+#endif
+
 // ImpMessage types
 const uint32_t BROADCAST = TRAINSIZE;
 //const uint32_t BETAINDUCT =  1u;
@@ -85,11 +91,6 @@ struct ImpState {
     
     // Received Message Counter
     uint32_t recCnt; //
-
-#ifdef TMDEBUG
-    // Test Counter
-    uint32_t testCnt;
-#endif
    
 };
 
@@ -100,7 +101,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
         
 #ifdef TMDEBUG
         // Test Counter
-        s->testCnt = 0u;
+        testCnt = 0u;
 #endif
         
         // Intialise Received Counter
@@ -255,6 +256,11 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
 
     // Receive handler
     inline void recv(ImpMessage* msg, None* edge) {
+        
+#ifdef TMDEBUG
+        // Test Counter
+        testCnt++;
+#endif 
        
         // Received Challenge Message
         if (msg->vote == INIT) {
@@ -448,11 +454,6 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                                         
                                         // Is the literal included in the clause?
                                         if (s->ta[y] >= INCBOUND) {
-                                            
-#ifdef TMDEBUG
-        // Test Counter
-        s->testCnt++;
-#endif 
                                             
                                             // Literal is included
                                             
@@ -1011,7 +1012,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
     inline bool finish(volatile ImpMessage* msg) {
         
         msg->srcClause = s->id;
-        msg->vote = (float)s->testCnt;
+        msg->dpX = testCnt;
         //msg->vote = (float)s->dpY;
         
         return true;
