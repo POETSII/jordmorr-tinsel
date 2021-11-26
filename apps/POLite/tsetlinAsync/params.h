@@ -31,12 +31,10 @@
 
 #define NOOFEPOCHS (500u)
 
-#define NOOFINPUTLIT (32u)
-
 #define LOWERCLASSBND (40u)
 #define UPPERCLASSBND (80u)
 
-#define RANDMAX (0xFFFF)
+#define RANDMAX (65535.0f) // 0xFFFF
 
 // Pre-processor selectors
 #define TMDEBUG (1)

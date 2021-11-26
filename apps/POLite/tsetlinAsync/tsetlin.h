@@ -12,10 +12,6 @@
 #define REWARD (1u)
 
 // GLOBALS
-#ifdef TMDEBUG
-    // Test Counter
-    uint32_t testCnt;
-#endif
 
 // ImpMessage types
 const uint32_t BROADCAST = TRAINSIZE;
@@ -86,11 +82,17 @@ struct ImpState {
     uint32_t dpX;
     uint32_t dpY;
     // Votes
-    int32_t iris[3];
+    int8_t iris[3];
 
     
     // Received Message Counter
     uint32_t recCnt; //
+    
+#ifdef TMDEBUG
+    // Test Counter
+    uint32_t testCnt;
+    uint32_t lastMsg;
+#endif
    
 };
 
@@ -101,7 +103,8 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
         
 #ifdef TMDEBUG
         // Test Counter
-        testCnt = 0u;
+        s->testCnt = 0u;
+        s->lastMsg = 0u;
 #endif
         
         // Intialise Received Counter
@@ -168,7 +171,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                 
                 msg->srcClause = s->clauseNo;
                 msg->dpX = s->dpX;
-                msg->dpY = s->dpY;
+                msg->dpY = (s->iris[2] << 24u) + (s->iris[1] << 16u) + (s->iris[0] << 8u) + (s->dpY);
                 s->sentFlags[4] |= BCASTCHAL;
             
             }
@@ -183,14 +186,16 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
             }
 
         }
-        else {
+        else {           
+
             // The request is for a unicast response
             for (uint32_t x = 0u; x < TRAINSIZE; x++) {
                 
                 if (*readyToSend == Pin(x)) {
                     
                     uint8_t wordNo = 0u;
-                    uint32_t tempClauseNo = s->clauseNo;
+                    //uint32_t tempClauseNo = s->clauseNo;
+                    uint32_t tempClauseNo = x;
     
                     // Find array index and remainder
                     while(tempClauseNo >= 32u){
@@ -198,7 +203,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                             wordNo++;
                     }
                     
-                    // Check if already sent
+                    // Check if not already sent
                     if (!(s->sentFlags[wordNo] & (1u << tempClauseNo))) {
                     
                         // Construct Response
@@ -207,7 +212,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                         msg->dpY = 0u;
                         
                         // Find Vote
-                        msg->vote = (((s->clauseOutput[wordNo]) >> tempClauseNo) & 0x1);
+                        msg->vote = (((s->clauseOutput[wordNo]) >> tempClauseNo) & 1u);
                         
                         // Mark Correct Sent Flag
                         s->sentFlags[wordNo] |= (1u << tempClauseNo);
@@ -236,7 +241,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                     wordNo++;
             }
             
-            if ((s->rdyFlags[wordNo] & index) && !(s->sentFlags[wordNo] & index)) {
+            if ( (s->rdyFlags[wordNo] & (1 << index)) && !(s->sentFlags[wordNo] & (1 << index)) ) {
                 
                 *readyToSend = Pin(x);
                 more = 1u;
@@ -256,28 +261,23 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
 
     // Receive handler
     inline void recv(ImpMessage* msg, None* edge) {
-        
-#ifdef TMDEBUG
-        // Test Counter
-        testCnt++;
-#endif 
        
         // Received Challenge Message
         if (msg->vote == INIT) {
             
-            uint32_t clause = 0u;
+            uint32_t clause = 1u;
             
             // Increment Received Counter
             s->recCnt++;
             
             // Calculate Clause 
             
-            for (uint32_t x = 0u; x < NOOFINPUTLIT; x++) {
+            for (uint32_t x = 0u; x < NOOFLITERALS; x++) {
                      
                 // If ta > n, include literal in clause calculation
                 if (s->ta[x] >= INCBOUND) {
                      
-                    clause &= msg->dpX & (1u << x);
+                    clause &= (msg->dpX >> (31u - x)) & 1u;
                          
                  }
                  
@@ -293,7 +293,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                     wordNo++;
             }
             
-            if (clause == 1u) {
+            if (clause == 1u) {             
                 
                 s->clauseOutput[wordNo] |= (1u << tempSrcClause);
                 
@@ -304,11 +304,11 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                 *readyToSend = Pin(msg->srcClause);
     
             }
-            else {
+            /*else {
                 
                 s->clauseOutput[wordNo] &= ~(1u << tempSrcClause);
                 
-            }
+            }*/
             
         }
         else if (msg->vote == CHALLENGE) {
@@ -316,38 +316,41 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
             //Train Tsetlin Machine
             
             // Calculate Clause 
-            uint32_t clause = 0u;
+            uint32_t clause = 1u;
             
-            for (uint32_t x = 0u; x < NOOFINPUTLIT; x++) {
+            for (uint32_t x = 0u; x < NOOFLITERALS; x++) {
                      
                 // If ta > n, include literal in clause calculation
                 if (s->ta[x] >= INCBOUND) {
                      
-                    clause &= msg->dpX & (1u << x);
+                    clause &= (msg->dpX >> (31u - x)) & 1u;
                          
                 }
                  
             }
             
-            uint8_t classConfidence[NOOFCLASSES] = {0u};
+            int8_t classConfidence[NOOFCLASSES] = {0};
             
-            for (uint8_t x = 1u; x < (NOOFCLASSES + 1u); x++) {
+            for (uint8_t x = 0u; x < NOOFCLASSES; x++) {
                 
-                classConfidence[x - 1u] =  (msg->dpY >> x * 8u) & 0xFF;
+                classConfidence[x] =  (msg->dpY >> ((x * 8u) + 8u)) & 0xFF;
                 
             }
             
+            // Provide feedback
+                
+                    
             // If clause is odd, Cj1. else Cj0
             if ((s->clauseNo & 1u) == 1u) {
                 
                 //Cj1
                 
                 // If the output y is 1
-                if (s->classNo == (msg->dpY & 0xFF)) {
+                if ((msg->dpY & 0xFF) == s->classNo) {
                     
                     //Provide TypeI Feedback
                     s->lfsr = randomNum(s->lfsr);
-                    float random = (float)s->lfsr / (float)RANDMAX;
+                    float random =  s->lfsr / (float)RANDMAX;
         
                     if (random < ((THRESH - classConfidence[s->classNo])/(2.0f * THRESH))) { 
                         
@@ -355,25 +358,25 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                         if (clause == 1u) {
                             
                             // Provide TypeI feedback for Cj1
-                            for (uint32_t y = 0u; y < NOOFINPUTLIT; y++) {
+                            for (uint32_t x = 0u; x < NOOFLITERALS; x++) {
                                 
                                 // If literal is 1
-                                if (((msg->dpX >> y) & 1u) == 1u) {
+                                if ((msg->dpX >> (31u - x)) == 1u) {
                                     
                                     // Literal is 1
                                     
                                     // Is the literal included in the clause?
-                                    if (s->ta[y] >= INCBOUND) {
+                                    if (s->ta[x] >= INCBOUND) {
                                         
                                         // Literal is included
                                         
                                         s->lfsr = randomNum(s->lfsr);
-                                        float random = (float)s->lfsr / (float)RANDMAX;
+                                        float random =  s->lfsr / (float)RANDMAX;
                                         
                                         if (random >= 1.0f/LEARNINGSENSITIVITY) {
                                             
                                             // High probability action -> reward
-                                            update_ta(&s->ta[y], REWARD);                                                                   //C1, L1, I1
+                                            update_ta(&s->ta[x], REWARD);                                                                   //C1, L1, I1
                                             
                                         }
                                         else {
@@ -387,12 +390,12 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                                     else {
                                         
                                         s->lfsr = randomNum(s->lfsr);
-                                        float random = (float)s->lfsr / (float)RANDMAX;
+                                        float random =  s->lfsr / (float)RANDMAX;
                                         
                                         if (random >= 1.0f/LEARNINGSENSITIVITY) {
                                             
                                             // High probability action -> penalty
-                                            update_ta(&s->ta[y], PENALTY);                                                                   //C1, L1, I0
+                                            update_ta(&s->ta[x], PENALTY);                                                                   //C1, L1, I0
                                             
                                         }
                                         else {
@@ -410,7 +413,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                                     // Literal is 0
                                     
                                     // Is the literal included in the clause?
-                                    if (s->ta[y] >= INCBOUND) {
+                                    if (s->ta[x] >= INCBOUND) {
                                         
                                         // Literal is included -> This case should never be valid                                           //C1, L0, I1
                                     
@@ -421,7 +424,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                                         // Literal is excluded
                                         
                                         s->lfsr = randomNum(s->lfsr);
-                                        float random = (float)s->lfsr / (float)RANDMAX;
+                                        float random =  s->lfsr / (float)RANDMAX;
 
                                         if (random >= 1.0f/LEARNINGSENSITIVITY) {
 
@@ -431,7 +434,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                                         else {
                                             
                                             // Low probability action -> reward
-                                            update_ta(&s->ta[y], REWARD);                                                                   //C1, L0, I0
+                                            update_ta(&s->ta[x], REWARD);                                                                   //C1, L0, I0
                                             
                                         }
                                         
@@ -445,20 +448,20 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                         else {
                             
                                 // Clause is 'inactive'    
-                                for (uint32_t y = 0u; y < NOOFINPUTLIT; y++) {
+                                for (uint32_t x = 0u; x < NOOFLITERALS; x++) {
                                     
                                     // If literal is 1
-                                    if (((msg->dpX >> y) & 1u) == 1u) {
+                                    if ((msg->dpX >> (31u - x)) == 1u) {
                                         
                                         // Literal is 1
                                         
                                         // Is the literal included in the clause?
-                                        if (s->ta[y] >= INCBOUND) {
+                                        if (s->ta[x] >= INCBOUND) {
                                             
                                             // Literal is included
                                             
                                             s->lfsr = randomNum(s->lfsr);
-                                            float random = (float)s->lfsr / (float)RANDMAX;
+                                            float random =  s->lfsr / (float)RANDMAX;
                                             
                                             if (random >= 1.0f/LEARNINGSENSITIVITY) {
                                                 
@@ -469,7 +472,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                                             else {
                                                 
                                                 // Low probability action -> penalty
-                                                update_ta(&s->ta[y], PENALTY);                                                                  //C0, L1, I1
+                                                update_ta(&s->ta[x], PENALTY);                                                                  //C0, L1, I1
                                                 
                                             }
                                             
@@ -480,7 +483,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                                             // Literal is excluded
                                             
                                             s->lfsr = randomNum(s->lfsr);
-                                            float random = (float)s->lfsr / (float)RANDMAX;
+                                            float random =  s->lfsr / (float)RANDMAX;
                                             
                                             if (random >= 1.0f/LEARNINGSENSITIVITY) {
                                                 
@@ -490,7 +493,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                                             else {
                                                 
                                                 // Low probability action -> reward
-                                                update_ta(&s->ta[y], REWARD);                                                                   //C0, L1, I0
+                                                update_ta(&s->ta[x], REWARD);                                                                   //C0, L1, I0
                                                 
                                             }
                                             
@@ -502,12 +505,12 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                                         // Literal is 0
                                         
                                         // Is the literal included in the clause?
-                                        if (s->ta[y] >= INCBOUND) {
+                                        if (s->ta[x] >= INCBOUND) {
                                          
                                             // Literal is included
                                             
                                             s->lfsr = randomNum(s->lfsr);
-                                            float random = (float)s->lfsr / (float)RANDMAX;
+                                            float random =  s->lfsr / (float)RANDMAX;
                                             
                                             if (random >= 1.0f/LEARNINGSENSITIVITY) {
                                                 
@@ -518,7 +521,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                                             else {
                                                 
                                                 // Low probability action -> penalty
-                                                update_ta(&s->ta[y], PENALTY);                                                                  //C0, L0, I1
+                                                update_ta(&s->ta[x], PENALTY);                                                                  //C0, L0, I1
                                                 
                                             }
                                             
@@ -530,7 +533,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                                             // Literal is excluded
                                             
                                             s->lfsr = randomNum(s->lfsr);
-                                            float random = (float)s->lfsr / (float)RANDMAX;
+                                            float random =  s->lfsr / (float)RANDMAX;
                                             
                                             if (random >= 1.0f/LEARNINGSENSITIVITY) {
                                                 
@@ -541,7 +544,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                                             else {
                                                 
                                                 // Low probability action -> reward
-                                                update_ta(&s->ta[y], REWARD);                                                                  //C0, L0, I0
+                                                update_ta(&s->ta[x], REWARD);                                                                  //C0, L0, I0
                                                 
                                             }
                                             
@@ -566,23 +569,23 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                     
                     // Provide TypeII Feedback for Cj1
                     s->lfsr = randomNum(s->lfsr);
-                    float random = (float)s->lfsr / (float)RANDMAX;
+                    float random =  s->lfsr / (float)RANDMAX;
         
                     if (random < ((THRESH + classConfidence[s->classNo])/(2.0f * THRESH))) {
 
                         // Only one combination requires feedback -> C1 L0 I0
                         if (clause == 1u) {
                             
-                            for (uint32_t y = 0u; y < NOOFINPUTLIT; y++) {
+                            for (uint32_t x = 0u; x < NOOFLITERALS; x++) {
                                 
                                 // If literal is 0
-                                if (((msg->dpX >> y) & 1u) == 0u) {
+                                if ((msg->dpX >> (31u - x)) == 0u) {
                                  
                                     // Is the literal excluded from the clause?
-                                    if (s->ta[y] <= EXCBOUND) {
+                                    if (s->ta[x] <= EXCBOUND) {
                                      
                                         // Provide penalty feedback
-                                        update_ta(&s->ta[y], PENALTY);                                                                  //C1, L0, I0
+                                        update_ta(&s->ta[x], PENALTY);                                                                  //C1, L0, I0
            
                                     }
            
@@ -602,27 +605,27 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                 // Cj0
                 
                 // If the output y is 1
-                if (s->classNo == (msg->dpY & 0xFF)) {
+                if ((msg->dpY & 0xFF) == s->classNo) {
                     
                     // Provide TypeII Feedback for Cj0
                     s->lfsr = randomNum(s->lfsr);
-                    float random = (float)s->lfsr / (float)RANDMAX;
+                    float random =  s->lfsr / (float)RANDMAX;
         
                     if (random < ((THRESH + classConfidence[s->classNo])/(2.0f * THRESH))) {
 
                         // Only one combination requires feedback -> C1 L0 I0
                         if (clause == 1u) {
                             
-                            for (uint32_t y = 0u; y < NOOFINPUTLIT; y++) {
+                            for (uint32_t x = 0u; x < NOOFLITERALS; x++) {
                                 
                                 // If literal is 0
-                                if (((msg->dpX >> y) & 1u) == 0u) {
+                                if ((msg->dpX >> (31u - x)) == 0u) {
                                  
                                     // Is the literal excluded from the clause?
-                                    if (s->ta[y] <= EXCBOUND) {
+                                    if (s->ta[x] <= EXCBOUND) {
                                      
                                         // Provide penalty feedback
-                                        update_ta(&s->ta[y], PENALTY);                                                                  //C1, L0, I0
+                                        update_ta(&s->ta[x], PENALTY);                                                                  //C1, L0, I0
            
                                     }
            
@@ -642,7 +645,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                     
                     // Provide TypeI Feedback
                     s->lfsr = randomNum(s->lfsr);
-                    float random = (float)s->lfsr / (float)RANDMAX;
+                    float random =  s->lfsr / (float)RANDMAX;
         
                     if (random < ((THRESH - classConfidence[s->classNo])/(2.0f * THRESH))) { 
                         
@@ -650,25 +653,25 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                         if (clause == 1u) {
                             
                             // Provide TypeI feedback for Cj1
-                            for (uint32_t y = 0u; y < NOOFINPUTLIT; y++) {
+                            for (uint32_t x = 0u; x < NOOFLITERALS; x++) {
                                 
                                 // If literal is 1
-                                if (((msg->dpX >> y) & 1u) == 1u) {
+                                if ((msg->dpX >> (31u - x)) == 1u) {
                                     
                                     // Literal is 1
                                     
                                     // Is the literal included in the clause?
-                                    if (s->ta[y] >= INCBOUND) {
+                                    if (s->ta[x] >= INCBOUND) {
                                         
                                         // Literal is included
                                         
                                         s->lfsr = randomNum(s->lfsr);
-                                        float random = (float)s->lfsr / (float)RANDMAX;
+                                        float random =  s->lfsr / (float)RANDMAX;
                                         
                                         if (random >= 1.0f/LEARNINGSENSITIVITY) {
                                             
                                             // High probability action -> reward
-                                            update_ta(&s->ta[y], REWARD);                                                                   //C1, L1, I1
+                                            update_ta(&s->ta[x], REWARD);                                                                   //C1, L1, I1
                                             
                                         }
                                         else {
@@ -682,12 +685,12 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                                     else {
                                         
                                         s->lfsr = randomNum(s->lfsr);
-                                        float random = (float)s->lfsr / (float)RANDMAX;
+                                        float random =  s->lfsr / (float)RANDMAX;
                                         
                                         if (random >= 1.0f/LEARNINGSENSITIVITY) {
                                             
                                             // High probability action -> penalty
-                                            update_ta(&s->ta[y], PENALTY);                                                                   //C1, L1, I0
+                                            update_ta(&s->ta[x], PENALTY);                                                                   //C1, L1, I0
                                             
                                         }
                                         else {
@@ -705,7 +708,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                                     // Literal is 0
                                     
                                     // Is the literal included in the clause?
-                                    if (s->ta[y] >= INCBOUND) {
+                                    if (s->ta[x] >= INCBOUND) {
                                         
                                         // Literal is included -> This case should never be valid                                           //C1, L0, I1
                                     
@@ -716,7 +719,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                                         // Literal is excluded
                                         
                                         s->lfsr = randomNum(s->lfsr);
-                                        float random = (float)s->lfsr / (float)RANDMAX;
+                                        float random =  s->lfsr / (float)RANDMAX;
 
                                         if (random >= 1.0f/LEARNINGSENSITIVITY) {
 
@@ -726,7 +729,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                                         else {
                                             
                                             // Low probability action -> reward
-                                            update_ta(&s->ta[y], REWARD);                                                                   //C1, L0, I0
+                                            update_ta(&s->ta[x], REWARD);                                                                   //C1, L0, I0
                                             
                                         }
                                         
@@ -740,20 +743,20 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                         else {
                             
                                 // Clasue is 'inactive'    
-                                for (uint32_t y = 0u; y < NOOFINPUTLIT; y++) {
+                                for (uint32_t x = 0u; x < NOOFLITERALS; x++) {
                                     
                                     // If literal is 1
-                                    if (((msg->dpX >> y) & 1u) == 1u) {
+                                    if ((msg->dpX >> (31u - x)) == 1u) {
                                         
                                         // Literal is 1
                                         
                                         // Is the literal included in the clause?
-                                        if (s->ta[y] >= INCBOUND) {
+                                        if (s->ta[x] >= INCBOUND) {
                                             
                                             // Literal is included
                                             
                                             s->lfsr = randomNum(s->lfsr);
-                                            float random = (float)s->lfsr / (float)RANDMAX;
+                                            float random =  s->lfsr / (float)RANDMAX;
                                             
                                             if (random >= 1.0f/LEARNINGSENSITIVITY) {
                                                 
@@ -764,7 +767,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                                             else {
                                                 
                                                 // Low probability action -> penalty
-                                                update_ta(&s->ta[y], PENALTY);                                                                  //C0, L1, I1
+                                                update_ta(&s->ta[x], PENALTY);                                                                  //C0, L1, I1
                                                 
                                             }
                                             
@@ -775,7 +778,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                                             // Literal is excluded
                                             
                                             s->lfsr = randomNum(s->lfsr);
-                                            float random = (float)s->lfsr / (float)RANDMAX;
+                                            float random =  s->lfsr / (float)RANDMAX;
                                             
                                             if (random >= 1.0f/LEARNINGSENSITIVITY) {
                                                 
@@ -785,7 +788,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                                             else {
                                                 
                                                 // Low probability action -> reward
-                                                update_ta(&s->ta[y], REWARD);                                                                   //C0, L1, I0
+                                                update_ta(&s->ta[x], REWARD);                                                                   //C0, L1, I0
                                                 
                                             }
                                             
@@ -797,12 +800,12 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                                         // Literal is 0
                                         
                                         // Is the literal included in the clause?
-                                        if (s->ta[y] >= INCBOUND) {
+                                        if (s->ta[x] >= INCBOUND) {
                                          
                                             // Literal is included
                                             
                                             s->lfsr = randomNum(s->lfsr);
-                                            float random = (float)s->lfsr / (float)RANDMAX;
+                                            float random =  s->lfsr / (float)RANDMAX;
                                             
                                             if (random >= 1.0f/LEARNINGSENSITIVITY) {
                                                 
@@ -813,7 +816,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                                             else {
                                                 
                                                 // Low probability action -> penalty
-                                                update_ta(&s->ta[y], PENALTY);                                                                  //C0, L0, I1
+                                                update_ta(&s->ta[x], PENALTY);                                                                  //C0, L0, I1
                                                 
                                             }
                                             
@@ -825,7 +828,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                                             // Literal is excluded
                                             
                                             s->lfsr = randomNum(s->lfsr);
-                                            float random = (float)s->lfsr / (float)RANDMAX;
+                                            float random =  s->lfsr / (float)RANDMAX;
                                             
                                             if (random >= 1.0f/LEARNINGSENSITIVITY) {
                                                 
@@ -836,7 +839,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                                             else {
                                                 
                                                 // Low probability action -> reward
-                                                update_ta(&s->ta[y], REWARD);                                                                  //C0, L0, I0
+                                                update_ta(&s->ta[x], REWARD);                                                                  //C0, L0, I0
                                                 
                                             }
                                             
@@ -858,16 +861,16 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                 }
                 
             }
-            
+                    
             // Recalculate Clause
-            uint32_t newClause = 0u;
+            uint32_t newClause = 1u;
             
-            for (uint32_t x = 0u; x < NOOFINPUTLIT; x++) {
+            for (uint32_t x = 0u; x < NOOFLITERALS; x++) {
                      
                 // If ta > n, include literal in clause calculation
                 if (s->ta[x] >= INCBOUND) {
                      
-                    newClause &= msg->dpX & (1u << x);
+                    newClause &= (msg->dpX >> (31u - x)) & 1u;
                          
                  }
                  
@@ -902,29 +905,36 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                 
                 // Call send to correct exterior vote count
                 *readyToSend = Pin(msg->srcClause);
-                
+               
             }
             
         }
         // Is the message a response to update the class confidences?
         else if (msg->vote < 2u) {
             
+#ifdef TMDEBUG
+    // Test Counter
+    s->testCnt++;
+#endif 
+            
             // Update Vote Count
+            
+            uint32_t sourceClass;
             
             // Determine Source Clause Class
             if (msg->srcClause < LOWERCLASSBND) {
                 
-                s->classNo = 0u;
+                sourceClass = 0u;
                 
             }
             else if (msg->srcClause >= UPPERCLASSBND) {
                 
-                s->classNo = 2u;
+                sourceClass = 2u;
                 
             }
             else {
                 
-                s->classNo = 1u;
+                sourceClass = 1u;
                 
             }
             
@@ -934,12 +944,12 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                 
                 if (msg->vote == 0u) {
                     // Odd clause, 1->0 = ++
-                    s->iris[s->classNo]++;
+                    s->iris[sourceClass]++;
                     
                 }
                 else {
                     // Odd clause, 0->1 = --
-                    s->iris[s->classNo]--;
+                    s->iris[sourceClass]--;
                 }
                 
             }
@@ -947,12 +957,12 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
                 
                 if (msg->vote == 0u) {
                     // Even clause, 1->0 = --
-                    s->iris[s->classNo]--;
+                    s->iris[sourceClass]--;
                     
                 }
                 else {
                     // Even clause, 0->1 = ++
-                    s->iris[s->classNo]++;
+                    s->iris[sourceClass]++;
                 }
                 
             }
@@ -1002,7 +1012,7 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
             return true;
             
         }
-       
+      
         // There is nothing to be sent
         return false;
         
@@ -1012,9 +1022,31 @@ struct ImpDevice : PDevice<ImpState, None, ImpMessage> {
     inline bool finish(volatile ImpMessage* msg) {
         
         msg->srcClause = s->id;
-        msg->dpX = testCnt;
-        //msg->vote = (float)s->dpY;
+        //msg->dpX = s->testCnt;
+        //msg->dpX = s->ta[1u];
+        msg->dpX = s->iris[0];
+        //msg->dpX = s->clauseNo;
+        //msg->dpX = s->classNo;
+        /*
+        uint32_t output = 0u;
         
+        for (uint32_t x = 0u; x < NOOFLITERALS; x++) {
+                     
+                // If ta > n, include literal in clause calculation
+                if (s->ta[x] >= INCBOUND) {
+                    
+                    output = (output << 1u) + 1u;
+                    
+                }
+                else {
+                    
+                    output = (output << 1u); 
+                    
+                }
+        }
+        
+        msg->dpX = output;
+        */
         return true;
         
     }

@@ -16,9 +16,9 @@
  * <- And here
  * ************************************************/
 
-extern const uint8_t in_train[TRAINSIZE][NOOFINPUTLIT];
+extern const uint8_t in_train[TRAINSIZE][NOOFLITERALS];
 extern const uint8_t out_train[TRAINSIZE];
-extern const uint8_t in_test[TESTSIZE][NOOFINPUTLIT];
+extern const uint8_t in_test[TESTSIZE][NOOFLITERALS];
 extern const uint8_t out_test[TESTSIZE];
 
 #endif

@@ -10,7 +10,7 @@
 
 // Binarised Inputs - Training
 
-const uint8_t in_train[TRAINSIZE][NOOFINPUTLIT] {
+const uint8_t in_train[TRAINSIZE][NOOFLITERALS] {
     
     {0,0,1,1,0,0,1,0,0,0,0,0,0,0,0,0,1,1,0,0,1,1,0,1,1,1,1,1,1,1,1,1},
     {0,0,1,1,0,0,0,1,0,0,0,0,0,0,0,0,1,1,0,0,1,1,1,0,1,1,1,1,1,1,1,1},
@@ -264,7 +264,7 @@ const uint8_t out_train[TRAINSIZE] {
 
 // Binarised Inputs - Test
 
-const uint8_t in_test[TESTSIZE][NOOFINPUTLIT] {
+const uint8_t in_test[TESTSIZE][NOOFLITERALS] {
   
     {0,0,1,1,0,0,1,0,0,0,0,0,0,0,0,0,1,1,0,0,1,1,0,1,1,1,1,1,1,1,1,1},//
     {0,0,1,1,0,0,0,1,0,0,0,0,0,0,0,0,1,1,0,0,1,1,1,0,1,1,1,1,1,1,1,1},//
