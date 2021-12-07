@@ -6,16 +6,16 @@
 
 #include <HostLink.h>
 #include <EdgeList.h>
-#include <sys/time.h>
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <sys/time.h>
 
 /*****************************************************
  * Tsetlin Machine - POETS Asynchronous Version
  * ***************************************************
- * This code performs the distributed, parallelised, asynchronous version of the Tselin Machine as set out in the paper below
+ * This code performs the distributed, parallelised, asynchronous version of the Tsetlin Machine as set out in the paper below
  *  https://arxiv.org/abs/2009.04861
  * USAGE:
  * To Be Completed ...
@@ -151,6 +151,10 @@ int main(int argc, char **argv)
     
     // Consume performance stats
     //politeSaveStats(&hostLink, "stats.txt");
+    
+    // Start timer for mesh creation and mapping
+    struct timeval start_train, finish_train, diff_train;
+    gettimeofday(&start_train, NULL);
   
     
 #ifdef IMPDEBUG
@@ -211,7 +215,7 @@ int main(int argc, char **argv)
         
         // close the file 
         fclose (fp);
-        */
+        
         
         static float result[NOOFSTATES][NOOFTARG] {};
 
@@ -267,28 +271,40 @@ int main(int argc, char **argv)
         }
         // close the file 
         fclose (fp);
-       
+*/       
 #else
 
-    static uint32_t result[TRAINSIZE] {};
+    //static uint32_t result[TRAINSIZE] {};
 
     // Receive final value of each device
-    for (uint32_t i = 0; i < TRAINSIZE; i++) {
+    //for (uint32_t i = 0; i < TRAINSIZE; i++) {
             
             // Receive message
             PMessage<ImpMessage> msg;
             hostLink.recvMsg(&msg, sizeof(msg));
+            
+            //if (i == 0u) {
+                
+                // Record train time
+                gettimeofday(&finish_train, NULL);
+                
+            //}
 
             // Save final value
-            result[graph.devices[msg.payload.srcClause]->state.clauseNo] = msg.payload.dpX;
+            //result[graph.devices[msg.payload.srcClause]->state.clauseNo] = msg.payload.dpX;
             
-    }
-    
+    //}
+    /*
     for (uint32_t i = 0; i < TRAINSIZE; i++) {
      
         printf("%d, %d \n", i, result[i]);
         
-    }
+    }*/
+    
+    timersub(&finish_train, &start_train, &diff_train);
+    double train_duration = (double) diff_train.tv_sec + (double) diff_train.tv_usec / 1000000.0;
+    
+    printf("Training Time = %lf \n", train_duration);
 
     // Receive first message and close timer
     //PMessage<ImpMessage> msg;
